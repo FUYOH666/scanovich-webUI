@@ -17,6 +17,22 @@
 
 ### Fixed
 
+- **PDF / file upload via Open WebUI crashed with `'NoneType' object has
+  no attribute 'encode'`:** Open WebUI v0.8.12 ran its own RAG/embedding
+  pipeline on uploaded files (`chat_completion_files_handler` →
+  `get_sources_from_items` → `query_collection` →
+  `embedding_function(...)`), but no embedding engine was configured
+  in our compose, so the lambda received `None` and crashed. The
+  architecturally correct fix is **not** to wire a second embedding
+  engine into WebUI — orchestrator already owns ingest via
+  `ingest/pipeline.py` (PDF + ~30 plain-text extensions + URL + audio).
+  Added `BYPASS_EMBEDDING_AND_RETRIEVAL=true` (and explicit empty
+  `RAG_EMBEDDING_ENGINE=`) to `.env.example` and `.env`. With bypass on,
+  the WebUI retrieval path takes the `file_object.data.get('content', '')`
+  branch (`retrieval/utils.py:1028`) and inlines the already-extracted
+  text directly into the chat payload, never touching the embedding
+  function. Recreating the `open-webui` container makes the fix live;
+  baseline `Row 6 Files` is unblocked for live PDF smoke.
 - **Orchestrator chat 500 after image-gen enabled:** the image-intent block
   in `main.py` reused the name `last_user_text`, shadowing the
   `memory.service.last_user_text` helper and breaking normal chat when

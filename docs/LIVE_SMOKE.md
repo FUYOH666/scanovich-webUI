@@ -49,6 +49,40 @@
 - **Trace highlights:** _n/a_
 - **Notes:** Services `gpthub-prod-litellm`, `gpthub-prod-orchestrator`, `gpthub-prod-open-webui` created; `docker compose ps` shows litellm/orchestrator healthy; WebUI container up on port 3000.
 
+## 2026-04-12 — Row 6 Files PDF upload regression (NoneType encode)
+
+- **Stack commit:** main @ pre-fix; reproduced on `gpthub-prod-open-webui` v0.8.12.
+- **Symptom:** uploading `Vkliuchaiem obaianiie po mietod ... .pdf` from
+  the Telegram Desktop downloads folder via the WebUI chat → top-right
+  red toast: `'NoneType' object has no attribute 'encode'`.
+- **Root cause (from `gpthub-prod-open-webui` logs):**
+  `chat_completion_files_handler` (`utils/middleware.py:1927`) →
+  `get_sources_from_items` (`retrieval/utils.py:1145`) →
+  `query_collection` (`retrieval/utils.py:455`) → lambda calls
+  `embedding_function.encode(...)` where `embedding_function` is
+  `None`. Open WebUI v0.8.12 was trying to run **its own** RAG /
+  embedding pipeline on the uploaded file, but no embedding engine
+  is wired in our compose (we deliberately don't run the
+  `embedding-shim` rag profile in the prod stack).
+- **Architectural decision:** orchestrator owns ingest. WebUI's job is
+  to extract text and forward it. Wiring a second embedding engine into
+  WebUI is the wrong fix — it duplicates the orchestrator's
+  `ingest/pipeline.py` and reintroduces the very split we removed when
+  we centralised ingest.
+- **Fix:** added `BYPASS_EMBEDDING_AND_RETRIEVAL=true` and explicit
+  empty `RAG_EMBEDDING_ENGINE=` to `.env.example` and `.env`. Confirmed
+  in v0.8.12 source (`/app/backend/open_webui/retrieval/utils.py:1028`)
+  that the bypass branch reads `file_object.data.get('content', '')`
+  directly and never calls the embedding function.
+- **Recovery:** `docker compose -f infra/docker-compose.yml up -d
+  --force-recreate open-webui` (compose recreated all three services
+  because they share the .env env_file). All three back to `Healthy`;
+  `curl http://localhost:3000/health` → 200.
+- **Status:** **Awaiting live retry by operator** — re-upload the same
+  PDF and either confirm the chat response or capture the new error.
+  Until that retry is recorded here, Row 6 Files remains formally
+  blocked from `Implemented` in `FEATURE_MATRIX.md`.
+
 ## 2026-04-11 11:46 — Step 5 full `demo.sh` (including WOW-1) end-to-end
 
 - **Stack commit:** `wow/expert-council` @ `9ff08ce` (council feature commit).
