@@ -74,6 +74,8 @@ services:
     env_file:
       - path: ../.env
         required: true
+      - path: ../.env.mws.local
+        required: false
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

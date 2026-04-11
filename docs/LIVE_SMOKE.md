@@ -73,11 +73,22 @@
 
 ![Step 1 WebUI smoke 2026-04-11](./sources/0.4.%20smoke-test-11.04-UI.png)
 
+## 2026-04-11 — Step 1 WebUI RAG smoke (PDF + retrieval), post-fix
+
+- **Stack commit:** _—_ (актуальный SHA: `git -C scanovich-webUI rev-parse --short HEAD`)
+- **Env:** `docker compose -f infra/docker-compose.yml --profile rag up -d --build`; `.env` + `.env.mws.local` (секреты не логируем). WebUI: `RAG_EMBEDDING_ENGINE=openai`, `RAG_OPENAI_API_BASE_URL=http://embedding-shim:8000/v1`, `RAG_EMBEDDING_MODEL=qwen3-embedding-8b`, `RAG_OPENAI_API_KEY` — тот же Bearer, что для MWS (`MWS_GPT_API_KEY`). Shim: `BGE_EMBEDDING_UPSTREAM=https://api.gpt.mws.ru` **или** только `MWS_GPT_API_BASE` в mws.local (без дубля `/v1/v1` в пути к `/embeddings`).
+- **Input:** PDF в чат (`Large_Language_Model-Based_Agents_for_Software_Eng.pdf` или аналог); запрос summary / ключевые пункты / анализ (RU/EN).
+- **Model(s) used:** чат — модель из UI (например `gpt-hub`); эмбеддинги — `qwen3-embedding-8b` через `embedding-shim` → MWS `POST /v1/embeddings`.
+- **Latency:** _не замеряли_
+- **Result:** **OK**
+- **Trace highlights:** В логах контейнера WebUI: `open_webui.retrieval.utils:query_doc` / `query_doc:result` — списки id чанков и метаданные PDF (`embedding_config` с `openai` + `qwen3-embedding-8b`). В UI: «Найден 1 источник», ответ с привязкой к файлу.
+- **Notes:** Закрывает PDF-часть после исторического **PARTIAL** (ошибка `'NoneType' object has no attribute 'encode'` без `RAG_EMBEDDING_ENGINE=openai` и до выравнивания upstream URL/ключа для шима). В `apps/embedding_shim/main.py`: нормализация URL (`…/v1` vs корень), опциональный `env_file` `.env.mws.local` в compose, прокси без «грязного» логирования тел ответов. Скрин этой итерации при желании добавить в `docs/sources/` отдельным файлом.
+
 ---
 
 ## Шаг 1 — Docker bring-up (чеклист ROADMAP §0.4)
 
-Сводка: три журнальных записи выше закрывают teardown / compose / health+curl; отдельная запись **«Step 1 WebUI smoke»** фиксирует ручной прогон трёх сценариев в браузере (текст OK, картинка OK, PDF — ошибка `encode`).
+Сводка: записи выше закрывают teardown / compose / health+curl; **«Step 1 WebUI smoke»** — исторический **PARTIAL** (PDF без RAG); **«Step 1 WebUI RAG smoke»** — тот же сценарий PDF в браузере с профилем **`rag`** и настройкой эмбеддингов (**OK**).
 Дополнительно: при полном P0-прогоне детализировать ряды 1–12 в секции шага 2 ниже.
 
 ---

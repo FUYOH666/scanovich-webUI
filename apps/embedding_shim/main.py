@@ -7,16 +7,28 @@ Hybrid BGE often returns `dense_embedding` instead.
 from __future__ import annotations
 
 import json
-import logging
 import os
 from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, Request, Response
 
-logger = logging.getLogger("gpthub_embedding_shim")
+_RAW_UPSTREAM = (
+    os.environ.get("BGE_EMBEDDING_UPSTREAM", "").strip()
+    or os.environ.get("MWS_GPT_API_BASE", "").strip()
+    or "http://host.docker.internal:9001"
+).strip()
 
-UPSTREAM = os.environ.get("BGE_EMBEDDING_UPSTREAM", "http://host.docker.internal:9001").rstrip("/")
+
+def _embeddings_url(upstream: str) -> str:
+    """Match orchestrator: MWS_GPT_API_BASE is usually .../v1 → POST .../v1/embeddings."""
+    u = upstream.rstrip("/")
+    if u.endswith("/v1"):
+        return f"{u}/embeddings"
+    return f"{u}/v1/embeddings"
+
+
+EMBEDDINGS_URL = _embeddings_url(_RAW_UPSTREAM)
 
 
 @asynccontextmanager
@@ -51,25 +63,25 @@ def _normalize_payload(data: dict) -> dict:
 async def embeddings(request: Request) -> Response:
     body = await request.body()
     auth = request.headers.get("authorization", "")
-    url = f"{UPSTREAM}/v1/embeddings"
     client: httpx.AsyncClient = request.app.state.http
-    r = await client.post(
-        url,
-        content=body,
-        headers={
-            "Content-Type": request.headers.get("content-type", "application/json"),
-            "Authorization": auth,
-        },
-    )
+    try:
+        r = await client.post(
+            EMBEDDINGS_URL,
+            content=body,
+            headers={
+                "Content-Type": request.headers.get("content-type", "application/json"),
+                "Authorization": auth,
+            },
+        )
+    except httpx.HTTPError as e:
+        err = json.dumps({"error": {"message": f"upstream_unreachable: {type(e).__name__}: {e}"}}).encode("utf-8")
+        return Response(content=err, status_code=502, media_type="application/json")
     ct = r.headers.get("content-type", "application/json")
     if r.status_code >= 400 or "json" not in ct.lower():
-        logger.warning("upstream_embeddings status=%s", r.status_code)
         return Response(content=r.content, status_code=r.status_code, media_type=ct)
     try:
         payload = r.json()
     except json.JSONDecodeError:
-        preview = r.content[:200].decode("utf-8", errors="replace")
-        logger.warning("upstream_embeddings invalid_json preview=%s", preview)
         return Response(content=r.content, status_code=r.status_code, media_type=ct)
     if isinstance(payload, dict):
         payload = _normalize_payload(payload)
