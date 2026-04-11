@@ -13,6 +13,12 @@
   in `main.py` reused the name `last_user_text`, shadowing the
   `memory.service.last_user_text` helper and breaking normal chat when
   memory retrieval ran. Renamed the local string to `image_intent_user_text`.
+- **`scripts/demo.sh` false WARN on image-gen:** bash glob was `*'!['`
+  (no trailing `*`), so the check only matched if the response **ended**
+  with `![`, which never happens. Fixed to `*'!['*'](http'*`. Row 3 is
+  now green end-to-end: `PASS=11 FAIL=0 WARN=0` via `demo.sh --skip-wow`
+  against live MWS `qwen-image`. Direct MWS probe from inside the
+  orchestrator container also returns a 200 with a real image URL.
 
 ### Added
 

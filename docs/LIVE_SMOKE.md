@@ -49,6 +49,20 @@
 - **Trace highlights:** _n/a_
 - **Notes:** Services `gpthub-prod-litellm`, `gpthub-prod-orchestrator`, `gpthub-prod-open-webui` created; `docker compose ps` shows litellm/orchestrator healthy; WebUI container up on port 3000.
 
+## 2026-04-11 11:06 — Step 1 image-gen re-check (WARN → OK)
+
+- **Stack commit:** `main` after shadow-fix (commit `094686d`)
+- **Env:** `.env` + `.env.mws.local` loaded; `MWS_GPT_API_BASE/KEY` visible inside `gpthub-prod-orchestrator` container.
+- **Input:**
+  1. `docker exec gpthub-prod-orchestrator python -c "httpx.post('$MWS_GPT_API_BASE/images/generations', ...)"` — прямой probe к MWS из контейнера.
+  2. `POST /v1/chat/completions` с `"Нарисуй рыжего кота в шляпе."` через orchestrator.
+  3. `./scripts/demo.sh --skip-wow` (после фикса bash-глоба `*'!['*'](http'*`).
+- **Model(s) used:** MWS `qwen-image` (короткое замыкание `short_circuit=image_gen` в `X-GPTHub-Trace`).
+- **Latency:** прямой MWS ~1.5 s; через orchestrator ~2 s; полный `demo.sh --skip-wow` ~45 s.
+- **Result:** OK (PASS=11, FAIL=0, **WARN=0**).
+- **Trace highlights:** `{"short_circuit": "image_gen", "mws_model": "qwen-image"}` в orchestrator-логе; inline markdown `![рыжего кота в шляпе](https://imagegen.gpt.mws.ru/files/.../....png)` в ответе.
+- **Notes:** Предыдущий WARN был ложно-позитивным — после пересборки под shadow-fix (`094686d`) image-gen действительно проходит в MWS `qwen-image`, но `scripts/demo.sh` использовал битый bash-паттерн `*'!['` (без финального `*`), из-за которого условие совпадало только если ответ **заканчивался** на `![`. Исправлено на `*'!['*'](http'*`. Баг в тесте, не в коде. Row 3 `Implemented` подтверждён живым контрактом MWS + end-to-end через orchestrator.
+
 ## 2026-04-11 — Step 1 health, readiness, WebUI HTTP, baseline curl
 
 - **Stack commit:** tag `smoke-green` on `main` (resolve SHA with `git rev-parse --short HEAD`)
