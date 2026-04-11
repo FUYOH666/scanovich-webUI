@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Docs:** `ROADMAP.md` (§0.2 row 13, §0.4 шаг 1/5, §0.6 differentiation,
+  трек A), `README.md` (WOW-1 merge note), `docs/TEAM_BRIEF_RU.md`, and
+  `docs/NEW_CHAT_HANDOFF_RU.md` — синхронизированы с WOW-1 Expert Council
+  в `main` (`9393d30`) и базовым счётчиком **182** тестов.
+  Пересобран `docs/submission/GPTHub_features_matrix.xlsx` из матрицы.
+
 ### Added
 
 - **Authorship:** `README.md` (Author), root `AUTHORS.md`, and `authors` in
