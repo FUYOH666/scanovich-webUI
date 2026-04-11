@@ -49,6 +49,17 @@
 - **Trace highlights:** _n/a_
 - **Notes:** Services `gpthub-prod-litellm`, `gpthub-prod-orchestrator`, `gpthub-prod-open-webui` created; `docker compose ps` shows litellm/orchestrator healthy; WebUI container up on port 3000.
 
+## 2026-04-11 11:46 — Step 5 full `demo.sh` (including WOW-1) end-to-end
+
+- **Stack commit:** `wow/expert-council` @ `9ff08ce` (council feature commit).
+- **Env:** `.env` + `.env.mws.local`; container rebuilt with `council.py`; `ORCHESTRATOR_URL=http://localhost:8089`.
+- **Input:** `./scripts/demo.sh` (no `--skip-wow`). Steps 1–7 hit the P0 baseline; step 8 sends `/research ... корпоративные RAG` via curl; step 9 sends the PPTX prompt.
+- **Model(s) used:** Row 1 → `gpt-hub-turbo`; Row 8 URL → alpha; Row 3 image → `qwen-image`; Row 9 memory → `qwen3-embedding-8b` + alpha; Row 10 classifier → alpha; Step 8 council → 3 experts + `gpt-hub-strong` synthesis.
+- **Latency:** full run dominated by council (~171 s). Total end-to-end ≈ 3.5 min.
+- **Result:** **PASS=12 FAIL=0 WARN=1**. The sole WARN is expected: WOW-3 PPTX (row 14, not yet implemented — `demo.sh` just sees a plain chat reply instead of a `.pptx` artifact).
+- **Trace highlights:** `X-GPTHub-Trace` present on every row; council path returned a valid OpenAI-compatible `chat.completion` with the synthesized answer (curl path in step 8 is unbounded and waits out the full 171 s).
+- **Notes:** Confirms the council code in the live container works inside the automated smoke, not just the manual `POST /v1/chat/completions` from 11:32. `wow/expert-council` is green end-to-end through docker; the only remaining WARN is a known-unmerged wow-candidate. Clears the ROADMAP §0.4 rule «merge `wow/expert-council` only after green end-to-end through WebUI».
+
 ## 2026-04-11 11:32 — Step 5 Expert Council (WOW-1) live smoke
 
 - **Stack commit:** branch `wow/expert-council`, orchestrator rebuilt with `council.py` + `merge_reasoning_exclude_into_body` + `<think>` strip + CoT-dump detection.
