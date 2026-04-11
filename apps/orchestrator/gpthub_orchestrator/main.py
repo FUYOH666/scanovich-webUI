@@ -6,12 +6,15 @@ import asyncio
 import codecs
 import json
 import logging
+import re
 import time
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from urllib.parse import quote
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from gpthub_orchestrator.classifier import classify_messages
@@ -39,14 +42,17 @@ from gpthub_orchestrator.image_gen import (
 )
 from gpthub_orchestrator.pptx import (
     PptxGenError,
+    build_pptx_artifact_download_url,
     build_pptx_chat_completion,
     build_pptx_error_chat_completion,
     build_pptx_error_sse_chunks,
     build_pptx_from_plan,
     build_pptx_sse_chunks,
     load_stripped_base_presentation,
+    pptx_download_filename,
     request_slide_plan,
 )
+from gpthub_orchestrator.pptx.artifacts import get_pptx_artifact_store
 from gpthub_orchestrator.memory.service import (
     build_memory_chat_completion,
     build_memory_sse_chunks,
@@ -99,6 +105,14 @@ def _apply_preamble_strip_to_completion(payload: dict[str, Any], settings: Setti
 def _apply_reasoning_strip_to_completion(payload: dict[str, Any], settings: Settings) -> None:
     if settings.orchestrator_strip_reasoning_from_response:
         strip_reasoning_from_completion_payload(payload)
+
+
+def _ascii_content_disposition_filename(filename: str) -> str:
+    """RFC 6266: filename= must be ASCII; non-ASCII goes in filename*."""
+    ascii_fn = re.sub(r"[^\x20-\x7e]", "_", filename).strip("._") or "presentation"
+    if not ascii_fn.lower().endswith(".pptx"):
+        ascii_fn = f"{ascii_fn}.pptx"
+    return ascii_fn
 
 
 def _configure_logging(level: str) -> None:
@@ -190,6 +204,27 @@ async def readyz(
         logger.warning("readyz_litellm_bad_status %s", r.status_code)
         raise HTTPException(status_code=503, detail="LiteLLM not ready")
     return {"status": "ready", "service": "gpthub-orchestrator", "litellm": "ok"}
+
+
+@app.get("/artifacts/pptx/{artifact_id}")
+async def download_pptx_artifact(
+    artifact_id: str,
+    token: Annotated[str, Query(min_length=8)],
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    """One-time download: token is invalidated after a successful response."""
+    store = get_pptx_artifact_store(settings.pptx_artifact_ttl_seconds)
+    result = store.consume(artifact_id, token)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    blob, filename = result
+    ascii_fn = _ascii_content_disposition_filename(filename)
+    disp = f'attachment; filename="{ascii_fn}"; filename*=UTF-8\'\'{quote(filename)}'
+    return Response(
+        content=blob,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={"Content-Disposition": disp},
+    )
 
 
 @app.get("/v1/models")
@@ -519,13 +554,24 @@ async def chat_completions(
             )
             logger.info("execution_trace %s", json.dumps(trace, ensure_ascii=False))
             trace_hdr = trace_to_header_value(trace)
+            store = get_pptx_artifact_store(settings.pptx_artifact_ttl_seconds)
+            artifact_id, one_time_token = store.create(
+                pptx_blob,
+                filename=pptx_download_filename(plan),
+            )
+            download_url = build_pptx_artifact_download_url(
+                public_base=settings.pptx_artifacts_public_base_url,
+                request_base_url=str(request.base_url),
+                artifact_id=artifact_id,
+                token=one_time_token,
+            )
             if bool(body.get("stream")):
 
                 async def pptx_ok_sse():
                     for ch in build_pptx_sse_chunks(
                         model_label=model_vis,
                         plan=plan,
-                        pptx_bytes=pptx_blob,
+                        download_url=download_url,
                     ):
                         yield ch
 
@@ -537,7 +583,7 @@ async def chat_completions(
             out = build_pptx_chat_completion(
                 model_label=model_vis,
                 plan=plan,
-                pptx_bytes=pptx_blob,
+                download_url=download_url,
             )
             return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
 

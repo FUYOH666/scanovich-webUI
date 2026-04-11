@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 
 import httpx
 import pytest
@@ -14,11 +15,13 @@ os.environ.setdefault("LITELLM_BASE_URL", "http://litellm.test:4000")
 os.environ.setdefault("ORCHESTRATOR_API_KEY", "test-key")
 
 from gpthub_orchestrator.main import app  # noqa: E402
+from gpthub_orchestrator.pptx.artifacts import reset_pptx_artifact_store_for_tests  # noqa: E402
 from gpthub_orchestrator.settings import Settings  # noqa: E402
 
 
 @pytest.mark.asyncio
 async def test_pptx_short_circuit_non_stream_ok():
+    reset_pptx_artifact_store_for_tests()
     plan_json = json.dumps(
         {
             "slides": [
@@ -55,22 +58,31 @@ async def test_pptx_short_circuit_non_stream_ok():
                     "messages": [{"role": "user", "content": "Сделай презентацию про демо"}],
                 },
             )
+            assert r.status_code == 200
+            data = r.json()
+            content = data["choices"][0]["message"]["content"]
+            assert "Превью слайдов" in content
+            assert "Введение" in content
+            assert "Скачать презентацию" in content
+            m = re.search(r"\[Скачать презентацию\]\(([^)]+)\)", content)
+            assert m
+            dl = m.group(1)
+            assert "/artifacts/pptx/" in dl
+            assert "token=" in dl
+
+            r_dl = await ac.get(dl)
+            assert r_dl.status_code == 200
+            assert r_dl.content[:4] == b"PK\x03\x04"
+            r_again = await ac.get(dl)
+            assert r_again.status_code == 404
+
+            trace_hdr = r.headers.get("X-GPTHub-Trace")
+            assert trace_hdr
+            trace = json.loads(base64.b64decode(trace_hdr).decode("utf-8"))
+            assert trace.get("pptx") == {"status": "ok", "slides": 2}
+            assert "orchestrator_fallback" not in trace
     finally:
         await mock_inner.aclose()
-
-    assert r.status_code == 200
-    data = r.json()
-    content = data["choices"][0]["message"]["content"]
-    assert "Превью слайдов" in content
-    assert "Введение" in content
-    assert "Скачать презентацию" in content
-    assert "data:application/vnd.openxmlformats-officedocument.presentationml.presentation;base64," in content
-
-    trace_hdr = r.headers.get("X-GPTHub-Trace")
-    assert trace_hdr
-    trace = json.loads(base64.b64decode(trace_hdr).decode("utf-8"))
-    assert trace.get("pptx") == {"status": "ok", "slides": 2}
-    assert "orchestrator_fallback" not in trace
 
 
 @pytest.mark.asyncio

@@ -2,22 +2,20 @@
 
 from __future__ import annotations
 
-import base64
 import json
 import time
 import uuid
 from typing import Any
+from urllib.parse import quote
 
 from gpthub_orchestrator.pptx.schema import SlidePlan
 
-_MIME_PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-
-# Open WebUI (and some proxies) reject a single SSE JSON line over ~1MB; Slidesgo decks
-# inflate to multi‑MB base64. Split `delta.content` across many chunks (concatenated by clients).
+# Open WebUI (and some proxies) reject a single SSE JSON line over ~1MB; keep slices modest
+# for long markdown (many slides). Binary PPTX is served via GET /artifacts/pptx/{id}.
 _SSE_CONTENT_SLICE_CHARS = 12_288
 
 
-def markdown_preview_with_download(plan: SlidePlan, pptx_bytes: bytes) -> str:
+def markdown_preview_with_download_link(plan: SlidePlan, download_url: str) -> str:
     lines = ["### Превью слайдов", ""]
     for i, spec in enumerate(plan.slides, start=1):
         title = (spec.title or "").strip() or "(без заголовка)"
@@ -27,19 +25,36 @@ def markdown_preview_with_download(plan: SlidePlan, pptx_bytes: bytes) -> str:
         else:
             lines.append(f"{i}. **{title}**")
     lines.append("")
-    b64 = base64.standard_b64encode(pptx_bytes).decode("ascii")
-    uri = f"data:{_MIME_PPTX};base64,{b64}"
-    lines.append(f"[Скачать презентацию]({uri})")
+    lines.append(f"[Скачать презентацию]({download_url})")
     return "\n".join(lines)
+
+
+def pptx_download_filename(plan: SlidePlan) -> str:
+    t = (plan.slides[0].title if plan.slides else "") or "presentation"
+    safe = "".join(c if c.isalnum() or c in " -_" else "_" for c in t.strip())[:80] or "presentation"
+    return f"{safe.strip()}.pptx"
+
+
+def build_pptx_artifact_download_url(
+    *,
+    public_base: str,
+    request_base_url: str,
+    artifact_id: str,
+    token: str,
+) -> str:
+    base = (public_base or "").strip().rstrip("/")
+    if not base:
+        base = str(request_base_url).rstrip("/")
+    return f"{base}/artifacts/pptx/{artifact_id}?token={quote(token, safe='')}"
 
 
 def build_pptx_chat_completion(
     *,
     model_label: str,
     plan: SlidePlan,
-    pptx_bytes: bytes,
+    download_url: str,
 ) -> dict[str, Any]:
-    content = markdown_preview_with_download(plan, pptx_bytes)
+    content = markdown_preview_with_download_link(plan, download_url)
     return {
         "id": f"chatcmpl-pptx-{uuid.uuid4().hex[:12]}",
         "object": "chat.completion",
@@ -79,8 +94,8 @@ def _slice_assistant_content_for_sse(text: str, *, max_chars: int = _SSE_CONTENT
     return [text[i : i + max_chars] for i in range(0, len(text), max_chars)]
 
 
-def build_pptx_sse_chunks(*, model_label: str, plan: SlidePlan, pptx_bytes: bytes) -> list[bytes]:
-    content = markdown_preview_with_download(plan, pptx_bytes)
+def build_pptx_sse_chunks(*, model_label: str, plan: SlidePlan, download_url: str) -> list[bytes]:
+    content = markdown_preview_with_download_link(plan, download_url)
     pieces = _slice_assistant_content_for_sse(content)
     cid = f"chatcmpl-pptx-{uuid.uuid4().hex[:12]}"
     created = int(time.time())

@@ -15,6 +15,6 @@
 .coverage
 .DS_Store
 
-# Только корень репо (не apps/orchestrator/.../data с YAML для образа)
-/data/
+data/
+!apps/orchestrator/gpthub_orchestrator/data/
 tmp/

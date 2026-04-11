@@ -15,7 +15,7 @@ from gpthub_orchestrator.pptx import (
     SlideSpec,
     build_pptx_from_plan,
     extract_json_object,
-    markdown_preview_with_download,
+    markdown_preview_with_download_link,
     parse_slide_plan_text,
     request_slide_plan,
 )
@@ -87,8 +87,7 @@ def test_markdown_preview_shows_kind():
     plan = SlidePlan(
         slides=[SlideSpec(title="T", bullets=["a"], notes="", kind="bullets")],
     )
-    blob = build_pptx_from_plan(plan, settings=_settings())
-    md = markdown_preview_with_download(plan, blob)
+    md = markdown_preview_with_download_link(plan, "https://example.test/d.pptx?token=x")
     assert "макет: `bullets`" in md
 
 

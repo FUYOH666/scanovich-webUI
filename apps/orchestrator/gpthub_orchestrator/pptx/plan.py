@@ -56,7 +56,7 @@ Optional "kind" per slide — semantic layout intent; pick one string that fits 
 Omit "kind" or use null if unsure. The deck builder may still use a simple template; "kind" guides structure and ordering of ideas.
 
 Rules:
-- 1–20 slides.
+- 1–{settings.pptx_max_slides} slides.
 - title: short heading.
 - bullets: 0–8 strings per slide; follow the text density level above.
 - notes: optional speaker notes (use "" if none).
@@ -79,7 +79,7 @@ Optional "kind" per slide — pick one that fits from:
 Omit "kind" if unsure.
 
 Rules:
-- 1–20 slides.
+- 1–{settings.pptx_max_slides} slides.
 - Each item has only "title" and optionally "kind".
 - Do not include "bullets" or "notes".
 - Escape any double quotes inside strings properly."""
@@ -399,6 +399,15 @@ async def _request_slide_plan_parallel(
         logger.warning("pptx_outline_parse_failed err=%s", e)
         raise PptxGenError("slide_plan_json_invalid") from e
 
+    mx = settings.pptx_max_slides
+    if len(outline_plan.slides) > mx:
+        logger.info(
+            "pptx_outline_truncated outline_slides=%s kept=%s",
+            len(outline_plan.slides),
+            mx,
+        )
+        outline_plan = SlidePlan(slides=list(outline_plan.slides[:mx]))
+
     n = len(outline_plan.slides)
     titles = [s.title for s in outline_plan.slides]
     _log_pptx_timing(
@@ -505,6 +514,11 @@ async def request_slide_plan(
             plan = await _request_slide_plan_monolithic(http, settings, messages, authorization=authorization)
     else:
         plan = await _request_slide_plan_monolithic(http, settings, messages, authorization=authorization)
+
+    mx = settings.pptx_max_slides
+    if len(plan.slides) > mx:
+        logger.info("pptx_plan_truncated plan_slides=%s kept=%s", len(plan.slides), mx)
+        plan = SlidePlan(slides=list(plan.slides[:mx]))
 
     _log_pptx_timing(
         {

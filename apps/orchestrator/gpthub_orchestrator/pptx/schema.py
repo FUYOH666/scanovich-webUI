@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-MAX_SLIDES = 20
+# Hard cap: parse, SlidePlan coercion, and deck build never exceed this many slides.
+MAX_SLIDES = 10
 MAX_BULLETS_PER_SLIDE = 8
 
 # Semantic layout tags (inspired by presentation-ai DEFAULT_LAYOUTS); optional per slide.
