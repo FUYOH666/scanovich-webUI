@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Authorship:** `README.md` (Author), root `AUTHORS.md`, and `authors` in
+  `apps/orchestrator/pyproject.toml` and `apps/embedding_shim/pyproject.toml`.
+
 ### Fixed
 
 - **Orchestrator chat 500 after image-gen enabled:** the image-intent block

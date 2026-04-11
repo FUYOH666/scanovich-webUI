@@ -2,6 +2,7 @@
 name = "embedding-shim"
 version = "0.1.0"
 description = "OpenAI-compatible embedding shim for gpthub-prod"
+authors = [{ name = "Aleksandr Mordvinov" }]
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",

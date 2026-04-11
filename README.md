@@ -83,6 +83,13 @@ Still open inside the P0 scope:
 All gaps and phases are tracked in `ROADMAP.md` (section 0) and
 `FEATURE_MATRIX.md`. Live model snapshot is in `docs/MWS_CATALOG.md`.
 
+## Author
+
+This repository is authored and maintained by **Aleksandr Mordvinov**
+([@FUYOH666](https://github.com/FUYOH666)). There are no other listed code
+contributors at this time; people invited on GitHub have repository access
+only. A short machine-readable list is in `AUTHORS.md`.
+
 ## Read Next
 
 - `docs/NEW_CHAT_HANDOFF_RU.md` — single-file handoff for a new chat window
