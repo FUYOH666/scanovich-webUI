@@ -316,13 +316,12 @@ async def chat_completions(
                 logger.warning("image_gen_failed err=%s", e)
                 # Fall through to normal chat routing; do not raise to client.
             else:
-                img_fb = {"enabled": False, "short_circuit": "image_gen", "mws_model": mws_model}
                 trace = build_trace(
                     classification=classification,
                     router_suggestion=router_suggestion,
                     model_used=model_vis,
                     artifacts=ingest_artifacts,
-                    orchestrator_fallback=img_fb,
+                    image_gen={"status": "ok", "model": mws_model},
                     prompt_version=load_role_prompts(settings.role_prompts_path).prompt_version,
                     classifier_source="heuristic",
                     server_clock_iso=server_clock_iso,
