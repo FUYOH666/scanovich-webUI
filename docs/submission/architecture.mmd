@@ -1,0 +1,19 @@
+%% GPTHub prod — one-slide architecture (Mermaid). Export to PNG for decks if needed.
+flowchart LR
+  subgraph ux [OpenWebUI]
+    WebUI[Open_WebUI]
+  end
+  subgraph spine [Runtime_spine]
+    Orch[Orchestrator]
+    Lite[LiteLLM]
+  end
+  subgraph upstream [MWS]
+    MWS[MWS_models]
+  end
+  WebUI -->|"OpenAI_API_BASE_URL"| Orch
+  Orch --> Lite
+  Lite --> MWS
+  Orch -.->|ingest| Ingest[ingest_PDF_URL_audio_ASR]
+  Orch -.->|memory| Mem[SQLite_plus_embeddings]
+  Orch -.->|image_gen| Img["MWS_/images/generations"]
+  Orch -.->|trace| Trace["X-GPTHub-Trace"]

@@ -1,0 +1,200 @@
+from typing import Literal
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    litellm_base_url: str = Field(
+        ...,
+        description="LiteLLM proxy base URL without trailing slash",
+    )
+    orchestrator_api_key: str = Field(
+        ...,
+        description="Bearer token from clients (same as LITELLM_MASTER_KEY for WebUI)",
+    )
+    litellm_timeout_seconds: float = Field(
+        default=600.0,
+        ge=5.0,
+        le=3600.0,
+        description="httpx timeout (connect/read/write/pool) for LiteLLM; raise for long RAG/PDF streams",
+    )
+    auto_route_model: bool = Field(
+        default=True,
+        description="If true, override the incoming model id with the router suggestion",
+    )
+    code_route_preference: Literal["local", "openrouter"] = Field(
+        default="local",
+        description="Historical compatibility toggle for code prompt flavor; no legacy path dependency",
+    )
+    orchestrator_litellm_fallback: bool = Field(
+        default=True,
+        description="Non-stream: retry LiteLLM with next alias in chain on 429/503",
+    )
+    orchestrator_fallback_max_attempts: int = Field(default=4, ge=1, le=8)
+    model_roles_path: str | None = Field(
+        default=None,
+        description="Optional path to model_roles.yaml (default: packaged data)",
+    )
+    role_prompts_path: str | None = Field(
+        default=None,
+        description="Optional path to role_prompts.yaml (default: packaged data)",
+    )
+    default_text_model: str = Field(default="gpt-hub-turbo")
+    default_vision_model: str = Field(default="gpt-hub-vision")
+    default_code_heavy_model: str = Field(default="gpt-hub-turbo")
+    log_level: str = Field(default="INFO")
+    inject_request_datetime: bool = Field(
+        default=True,
+        description="Prepend server date/time to system message so the model can answer 'what time is it'",
+    )
+    orchestrator_clock_tz: str = Field(
+        default="UTC",
+        description="IANA timezone for inject_request_datetime (e.g. Europe/Moscow, UTC)",
+    )
+    orchestrator_models_catalog: Literal["all", "single_public"] = Field(
+        default="single_public",
+        description="GET /v1/models: expose all LiteLLM aliases or a single public facade id for Open WebUI",
+    )
+    orchestrator_public_model_id: str = Field(
+        default="gpt-hub",
+        min_length=1,
+        description="Public model id shown in UI when catalog is single_public; must not be a LiteLLM alias",
+    )
+    greeting_canned_response_enabled: bool = Field(
+        default=False,
+        description="If true, greeting_or_tiny without images returns a fixed reply without calling LiteLLM",
+    )
+    greeting_canned_message: str = Field(
+        default="Привет! Чем могу помочь?",
+        min_length=1,
+        description="Assistant text for canned greeting short-circuit",
+    )
+    orchestrator_strip_known_cot_preamble: bool = Field(
+        default=False,
+        description="If true, non-stream responses may strip known CoT preambles from assistant content (last resort)",
+    )
+    orchestrator_request_reasoning_exclude: bool = Field(
+        default=True,
+        description="If true, ask the upstream provider not to return reasoning tokens when supported",
+    )
+    orchestrator_strip_reasoning_from_response: bool = Field(
+        default=True,
+        description="If true, remove reasoning/thinking fields from JSON and stream chunks before the client",
+    )
+    ingest_enabled: bool = Field(
+        default=True,
+        description="If true, run perception ingest (PDF/audio) on last user message before routing",
+    )
+    mws_gpt_api_base: str | None = Field(
+        default=None,
+        description="MWS base URL (e.g. https://api.gpt.mws.ru/v1). Used as default for ASR/image-gen/embeddings.",
+    )
+    mws_gpt_api_key: str | None = Field(
+        default=None,
+        description="MWS API key. Used as default bearer for ASR/image-gen/embeddings.",
+    )
+    orchestrator_asr_base_url: str | None = Field(
+        default=None,
+        description="OpenAI-compatible ASR base URL. If unset, orchestrator falls back to mws_gpt_api_base.",
+    )
+    orchestrator_asr_api_key: str | None = Field(
+        default=None,
+        description="Bearer for ASR. If unset, orchestrator falls back to mws_gpt_api_key.",
+    )
+    orchestrator_asr_model: str = Field(
+        default="whisper-medium",
+        description="Model id for POST .../audio/transcriptions (default: MWS whisper-medium).",
+    )
+
+    def resolved_asr_base_url(self) -> str | None:
+        return self.orchestrator_asr_base_url or self.mws_gpt_api_base
+
+    def resolved_asr_api_key(self) -> str | None:
+        return self.orchestrator_asr_api_key or self.mws_gpt_api_key
+    ingest_pdf_max_bytes: int = Field(default=15_000_000, ge=1024, le=50_000_000)
+    ingest_pdf_max_pages: int = Field(default=50, ge=1, le=500)
+    ingest_fetch_max_bytes: int = Field(default=25_000_000, ge=1024, le=100_000_000)
+    ingest_image_fetch_timeout: float = Field(default=60.0, ge=5.0, le=600.0)
+    ingest_url_enabled: bool = Field(
+        default=True,
+        description="If true, detect http(s) URLs in last user message text and ingest their page text",
+    )
+    ingest_url_max_per_message: int = Field(default=3, ge=1, le=10)
+    ingest_url_timeout_seconds: float = Field(default=10.0, ge=2.0, le=60.0)
+    ingest_url_max_bytes: int = Field(default=2_000_000, ge=1024, le=25_000_000)
+    ingest_url_allow_private_hosts: bool = Field(
+        default=False,
+        description="Dev/test only: allow fetching private/loopback IPs. Must stay false in prod.",
+    )
+    image_gen_enabled: bool = Field(
+        default=True,
+        description="If true, orchestrator detects image-generation intent and calls MWS /images/generations directly.",
+    )
+    image_gen_model: str = Field(
+        default="qwen-image",
+        description="MWS image model id used for /images/generations short-circuit.",
+    )
+    image_gen_timeout_seconds: float = Field(default=120.0, ge=5.0, le=600.0)
+    memory_enabled: bool = Field(
+        default=True,
+        description="If true, orchestrator detects memory commands and injects retrieved facts.",
+    )
+    memory_db_path: str = Field(
+        default="/tmp/gpthub_memory.sqlite3",
+        description="Filesystem path to the SQLite memory store.",
+    )
+    memory_embedding_model: str = Field(
+        default="qwen3-embedding-8b",
+        description="MWS embedding model id for memory facts (dim 4096).",
+    )
+    memory_embedding_timeout_seconds: float = Field(default=60.0, ge=5.0, le=600.0)
+    memory_retrieval_enabled: bool = Field(
+        default=True,
+        description="If true, inject top-K relevant memory facts into normal chat flow.",
+    )
+    memory_retrieval_top_k: int = Field(default=5, ge=1, le=20)
+    memory_retrieval_min_score: float = Field(
+        default=0.25,
+        ge=0.0,
+        le=1.0,
+        description="Cosine similarity floor for retrieved facts.",
+    )
+
+    @field_validator("model_roles_path", "role_prompts_path", mode="before")
+    @classmethod
+    def empty_str_paths_to_none(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s if s else None
+
+    @field_validator("orchestrator_public_model_id", mode="after")
+    @classmethod
+    def strip_public_model_id(cls, v: str) -> str:
+        return v.strip()
+
+    @field_validator("greeting_canned_message", mode="after")
+    @classmethod
+    def strip_canned_message(cls, v: str) -> str:
+        return v.strip()
+
+    @field_validator(
+        "orchestrator_asr_base_url",
+        "orchestrator_asr_api_key",
+        "mws_gpt_api_base",
+        "mws_gpt_api_key",
+        mode="before",
+    )
+    @classmethod
+    def empty_optional_str_to_none(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s if s else None
+
+
+def load_settings() -> Settings:
+    return Settings()
