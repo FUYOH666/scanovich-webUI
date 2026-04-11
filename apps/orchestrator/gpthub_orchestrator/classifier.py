@@ -104,6 +104,7 @@ class TaskType(str, Enum):
     IMAGE_ANALYSIS = "image_analysis"
     AUDIO_ANALYSIS = "audio_analysis"
     MULTIMODAL_WORKFLOW = "multimodal_workflow"
+    DEEP_RESEARCH = "deep_research"
 
 
 def _flatten_text(parts: list[dict[str, Any]] | str) -> str:
@@ -183,10 +184,20 @@ def classify_messages(messages: list[dict[str, Any]]) -> dict[str, Any]:
     if has_image:
         modalities.append("image")
 
+    # Deep research / Expert Council wins over everything except multimodal.
+    # We lazy-import here to avoid a classifier↔council import cycle.
+    deep_research_hit = False
+    if not has_image:
+        from gpthub_orchestrator.council import is_council_request  # local import to avoid cycle
+
+        deep_research_hit = is_council_request(last_user)
+
     if has_image and (analyze_hints or code_hints):
         task = TaskType.MULTIMODAL_WORKFLOW
     elif has_image:
         task = TaskType.IMAGE_ANALYSIS
+    elif deep_research_hit:
+        task = TaskType.DEEP_RESEARCH
     elif (doc_hints or long_text) and not has_image:
         task = TaskType.SUMMARIZATION if doc_hints else TaskType.FILE_ANALYSIS
     elif code_hints or analyze_hints:
