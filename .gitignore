@@ -15,5 +15,6 @@
 .coverage
 .DS_Store
 
-data/
+# Только корень репо (не apps/orchestrator/.../data с YAML для образа)
+/data/
 tmp/
