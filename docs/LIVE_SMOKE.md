@@ -49,6 +49,32 @@
 - **Trace highlights:** _n/a_
 - **Notes:** Services `gpthub-prod-litellm`, `gpthub-prod-orchestrator`, `gpthub-prod-open-webui` created; `docker compose ps` shows litellm/orchestrator healthy; WebUI container up on port 3000.
 
+## 2026-04-11 11:32 — Step 5 Expert Council (WOW-1) live smoke
+
+- **Stack commit:** branch `wow/expert-council`, orchestrator rebuilt with `council.py` + `merge_reasoning_exclude_into_body` + `<think>` strip + CoT-dump detection.
+- **Env:** `.env` + `.env.mws.local`; council defaults — experts `gpt-hub-turbo` / `gpt-hub-reasoning-or` / `gpt-hub-doc`, synthesizer `gpt-hub-strong` (glm-4.6-357b), expert max-tokens 700, synthesis max-tokens 3000.
+- **Input:** `POST /v1/chat/completions` with `{"messages":[{"role":"user","content":"/research Что такое Retrieval-Augmented Generation (RAG) в AI? Плюсы и минусы основных подходов в 2025 году. Развёрнуто."}]}`.
+- **Model(s) used:** `gpt-hub-turbo` (mws-gpt-alpha, generalist), `gpt-hub-reasoning-or` (qwen3-coder-480b, reasoning), `gpt-hub-doc` (qwen2.5-72b, doc) → синтез через `gpt-hub-strong` (glm-4.6-357b).
+- **Latency:** 171 s end-to-end. Parallel fan-out: Generalist 13 s / Reasoning 19 s / Doc 40 s (≈ max 40 s). Synthesis: ≈ 130 s.
+- **Result:** OK. Один OpenAI-совместимый `chat.completion`, 3425 символов, на русском, без `<think>` leakage, со структурой «суть → Что говорит совет экспертов → Практические рекомендации».
+- **Trace highlights:** `orchestrator_fallback` payload:
+
+  ```json
+  {
+    "short_circuit": "expert_council",
+    "synthesis_model": "gpt-hub-strong",
+    "branches_ok": [
+      {"key": "strong",    "model": "gpt-hub-turbo",         "label": "Generalist",       "latency_ms": 13266, "chars": 2453},
+      {"key": "reasoning", "model": "gpt-hub-reasoning-or",  "label": "Reasoning",        "latency_ms": 19138, "chars": 2113},
+      {"key": "doc",       "model": "gpt-hub-doc",           "label": "Doc/Long-context", "latency_ms": 40309, "chars": 2020}
+    ],
+    "branches_failed": [],
+    "total_ms": 170553,
+    "fallback_used": false
+  }
+  ```
+- **Notes:** Первая попытка (`gpt-hub-strong` как generalist, 120 s synthesis timeout, 1200 max-tokens) упала двумя разными способами: (1) synthesis timeout 207 s → emergency composite с raw `<think>`; (2) после bump'а таймаута — glm-4.6 съел все 1200 токенов на CoT и вернул **пустой** `content`. Починили тремя вещами одновременно: (a) `merge_reasoning_exclude_into_body` теперь применяется ко всем council-вызовам, чтобы upstream не возвращал reasoning-поля; (b) `council_max_synthesis_tokens` поднят до 3000; (c) добавлен эвристический детектор CoT-dump'а (если после strip ответ похож на план типа `1.  **Deconstruct the Request:**`, падаем в emergency composite). Unit-тесты (29 шт. в `test_council.py`) покрывают все четыре пути: happy, partial (2/3), strong-only fallback, emergency composite, плюс CoT strip для закрытых и незакрытых `<think>`. Ряд 13 (WOW-1 Expert Council) переведён из Deferred → Implemented.
+
 ## 2026-04-11 11:06 — Step 1 image-gen re-check (WARN → OK)
 
 - **Stack commit:** `main` after shadow-fix (commit `094686d`)

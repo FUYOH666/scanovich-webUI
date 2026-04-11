@@ -14,6 +14,13 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from gpthub_orchestrator.classifier import classify_messages
 from gpthub_orchestrator.clock_context import build_session_clock_block
+from gpthub_orchestrator.council import (
+    build_council_chat_completion,
+    build_council_sse_chunks,
+    extract_council_question,
+    is_council_request,
+    run_council,
+)
 from gpthub_orchestrator.greeting_canned import (
     canned_chat_completion_json,
     canned_chat_completion_sse_chunks,
@@ -288,6 +295,65 @@ async def chat_completions(
                 out = build_memory_chat_completion(
                     model_label=model_vis,
                     text=mem_result.reply_text,
+                )
+                return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
+
+    # Expert Council short-circuit (WOW-1): fan-out to 3 MWS experts and synthesize.
+    if settings.council_enabled:
+        council_user_text = ""
+        for m in reversed(body["messages"]):
+            if m.get("role") == "user":
+                c = m.get("content")
+                if isinstance(c, str):
+                    council_user_text = c
+                elif isinstance(c, list):
+                    parts = [str(p.get("text", "")) for p in c if isinstance(p, dict) and p.get("type") == "text"]
+                    council_user_text = " ".join(parts).strip()
+                break
+        if council_user_text and is_council_request(council_user_text):
+            question = extract_council_question(council_user_text)
+            model_vis = client_visible_model_id(body, settings.orchestrator_public_model_id)
+            try:
+                council_result = await run_council(
+                    http,
+                    settings=settings,
+                    base_url=settings.litellm_base_url,
+                    auth_header=request.headers.get("Authorization", ""),
+                    question=question,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("council_run_failed err=%s", e)
+                council_result = None
+            if council_result is not None:
+                council_fb = council_result.trace_payload()
+                trace = build_trace(
+                    classification=classification,
+                    router_suggestion=router_suggestion,
+                    model_used=model_vis,
+                    artifacts=ingest_artifacts,
+                    orchestrator_fallback=council_fb,
+                    prompt_version=load_role_prompts(settings.role_prompts_path).prompt_version,
+                    classifier_source="heuristic",
+                    server_clock_iso=server_clock_iso,
+                    ingest_ms=ingest_ms,
+                )
+                logger.info("execution_trace %s", json.dumps(trace, ensure_ascii=False))
+                trace_hdr = trace_to_header_value(trace)
+                if bool(body.get("stream")):
+                    chunks = build_council_sse_chunks(model_vis, council_result.final_text)
+
+                    async def council_sse():
+                        for ch in chunks:
+                            yield ch
+
+                    return StreamingResponse(
+                        council_sse(),
+                        media_type="text/event-stream",
+                        headers={"X-GPTHub-Trace": trace_hdr},
+                    )
+                out = build_council_chat_completion(
+                    model_label=model_vis,
+                    text=council_result.final_text,
                 )
                 return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
 

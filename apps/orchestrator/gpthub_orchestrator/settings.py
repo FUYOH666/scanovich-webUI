@@ -162,6 +162,66 @@ class Settings(BaseSettings):
         le=1.0,
         description="Cosine similarity floor for retrieved facts.",
     )
+    council_enabled: bool = Field(
+        default=True,
+        description="If true, orchestrator detects DEEP_RESEARCH intent and runs the Expert Council fan-out.",
+    )
+    council_branch_timeout_seconds: float = Field(
+        default=120.0,
+        ge=10.0,
+        le=600.0,
+        description="Per-expert timeout. Branches that miss the deadline are dropped from synthesis.",
+    )
+    council_synthesis_timeout_seconds: float = Field(
+        default=240.0,
+        ge=10.0,
+        le=600.0,
+        description="Timeout for the final synthesis call (glm-4.6 strong is slow on long context).",
+    )
+    council_expert_strong: str = Field(
+        default="gpt-hub-turbo",
+        description=(
+            "LiteLLM alias for the 'fast generalist' expert in the council. "
+            "Uses mws-gpt-alpha by default (fast, OpenAI-like baseline)."
+        ),
+    )
+    council_expert_reasoning: str = Field(
+        default="gpt-hub-reasoning-or",
+        description="LiteLLM alias for the 'deep reasoning / code' expert in the council.",
+    )
+    council_expert_doc: str = Field(
+        default="gpt-hub-doc",
+        description="LiteLLM alias for the 'document / long-context' expert in the council.",
+    )
+    council_synthesis_model: str = Field(
+        default="gpt-hub-strong",
+        description=(
+            "LiteLLM alias used to synthesize the final answer from expert opinions. "
+            "Defaults to gpt-hub-strong (glm-4.6-357b) — the most capable model."
+        ),
+    )
+    council_min_branches_for_synthesis: int = Field(
+        default=2,
+        ge=1,
+        le=3,
+        description="Minimum number of successful expert branches required to run synthesis; otherwise fall back to strong-only.",
+    )
+    council_max_expert_tokens: int = Field(
+        default=700,
+        ge=100,
+        le=4000,
+        description="max_tokens passed to each expert branch (synthesis is capped separately).",
+    )
+    council_max_synthesis_tokens: int = Field(
+        default=3000,
+        ge=100,
+        le=8000,
+        description=(
+            "max_tokens passed to the synthesis call. Must be generous enough "
+            "that glm-4.6 / qwen3 reasoning models can still emit a real answer "
+            "even if they leak some CoT despite reasoning-exclude."
+        ),
+    )
 
     @field_validator("model_roles_path", "role_prompts_path", mode="before")
     @classmethod
