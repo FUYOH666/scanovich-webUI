@@ -56,7 +56,7 @@ Optional `rag` support is infrastructure for Open WebUI, not a second flagship p
 
 ## Current State
 
-This repo contains a runnable product spine with **153 passing unit +
+This repo contains a runnable product spine with **182 passing unit +
 integration tests**. What's live in code right now:
 
 - text chat through the orchestrator facade (row 1)
@@ -70,6 +70,14 @@ integration tests**. What's live in code right now:
   short-circuit on `qwen-image` (row 3)
 - **long-term memory**: SQLite facts store + MWS `qwen3-embedding-8b`
   retrieval + "запомни / забудь / что помнишь" command parser (row 9)
+- **WOW-1 Expert Council (row 13)** — merged to `main` (`9393d30`): `/research`
+  or «глубокое исследование» → parallel fan-out to `gpt-hub-turbo`
+  (generalist), `gpt-hub-reasoning-or` (reasoning), `gpt-hub-doc` (doc) →
+  `gpt-hub-strong` (glm-4.6-357b) synthesis, one OpenAI-compatible
+  `chat.completion` in the «суть → Что говорит совет экспертов →
+  Практические рекомендации» structure. Live smoke 2026-04-11 11:32:
+  171 s, 3/3 branches, 3425-char clean Russian synthesis; full `demo.sh`
+  (no `--skip-wow`) green same day — see `docs/LIVE_SMOKE.md`.
 - voice chat through Open WebUI STT/TTS (row 2, UI-managed)
 - `X-GPTHub-Trace` with full routing / fallback / ingest observability (row 15)
 - optional embedding normalization for RAG mode (infra only)
@@ -77,8 +85,8 @@ integration tests**. What's live in code right now:
 Still open inside the P0 scope:
 
 - row 7 web search — needs `ENABLE_WEB_SEARCH=true` + `TAVILY_API_KEY` in env;
-- WOW-1 Expert Council (row 13) and WOW-3 PPTX generation (row 14) — planned
-  as wow-features inside the "one chat flow" constraint.
+- WOW-3 PPTX generation (row 14) — planned as a wow-feature inside
+  the "one chat flow" constraint.
 
 All gaps and phases are tracked in `ROADMAP.md` (section 0) and
 `FEATURE_MATRIX.md`. Live model snapshot is in `docs/MWS_CATALOG.md`.

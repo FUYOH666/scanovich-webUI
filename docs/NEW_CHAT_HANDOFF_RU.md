@@ -56,14 +56,13 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 | 11 | Ручной выбор модели | Implemented (нужен демо-режим с dropdown) |
 | 12 | Markdown / код | Implemented |
 
-**153 unit/integration теста проходят.**
+**182 unit/integration теста проходят** (`apps/orchestrator`).
 
-### 3.2. Доп. ряды 13–15 (wow-features, активно делаем)
+### 3.2. Доп. ряды 13–15 (wow + trace)
 
-- Row 13 **Expert Council** (wow-1): orchestrator fan-out в 3 MWS модели
-  (`strong` + `reasoning` + `doc`), synthesis через `strong`. Один
-  chat.completion наружу. Закрывает Deep Research без нарушения
-  «один chat flow».
+- Row 13 **Expert Council** (WOW-1): **Implemented** в `main` (`9393d30`) —
+  `council.py`, fan-out + synthesis, журнал `docs/LIVE_SMOKE.md` 2026-04-11
+  (ручной council + полный `demo.sh` без `--skip-wow`).
 - Row 14 **PPTX generation** (wow-3): `python-pptx` + классификатор на
   триггеры «сделай презентацию».
 - Row 15 **X-GPTHub-Trace** уже есть — подсвечиваем на защите.
@@ -139,8 +138,6 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 
 ### 5.3. Что ещё не написано
 
-- Expert Council (row 13, wow-1): новый `task_type=DEEP_RESEARCH`, fan-out,
-  synthesis.
 - PPTX (row 14, wow-3): `python-pptx` dep + slide plan generator.
 - Web search env-тумблер (row 7).
 - Демо-режим «все алиасы в dropdown» для row 11.
@@ -160,15 +157,11 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
    скелет слайдов.
 4. **Шаг 4 — Row 7 Tavily toggle** (box: 30 мин). env-флаг + пересборка
    open-webui контейнера.
-5. **Шаг 5 — WOW-1 Expert Council** (box: 6 ч, жёсткий). Ветка
-   `wow/expert-council`, новый `task_type=DEEP_RESEARCH`, fan-out в
-   `strong + reasoning + doc`, synthesis через `strong`, один
-   chat.completion наружу. **Kill switch: если за 6 ч нет зелёного
-   end-to-end — откат до `smoke-green`, Council в backlog.**
+5. **Шаг 5 — WOW-1 Expert Council** — **готово** в `main` (`9393d30`).
 6. **Шаг 6 — Репетиция демо-сценария** (box: 1 ч). Реальный прогон,
    не запись.
-7. **Шаг 7 — WOW-3 PPTX** (box: 4 ч, **условный** — только если Council
-   готов и осталось 4+ ч). Иначе выбрасываем без сожалений.
+7. **Шаг 7 — WOW-3 PPTX** (box: 4 ч, **условный** — только если осталось
+   время до дедлайна). Иначе выбрасываем без сожалений.
 8. **Шаг 8 — Запись demo-видео** (box: 1 ч, 2–3 дубля).
 9. **Шаг 9 — Финальная сверка + git tag `demo-ready`**.
 
@@ -194,10 +187,9 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 
 ## 8. Активные рабочие треки
 
-- **Трек A (code):** WOW-1 Council в ветке `wow/expert-council` → row 7
+- **Трек A (code):** WOW-1 Council **влит в `main`** (`9393d30`) → row 7
   Tavily toggle → (условно) WOW-3 PPTX в ветке `wow/pptx`.
-  Правило: wow-ветки вливаются в main **только** после зелёного
-  прогона через WebUI.
+  Правило: следующие wow-ветки в `main` только после зелёного прогона.
 - **Трек B (infra/smoke):** шаг 1 docker smoke → шаг 2 полный P0 →
   шаг 6 репетиция → шаг 8 запись видео.
 - **Трек C (submission):** шаг 3 артефакты (xlsx + диаграмма + скелет
@@ -239,7 +231,7 @@ docker compose -f infra/docker-compose.yml up -d --build
 # 3. Тесты orchestrator
 cd apps/orchestrator
 uv sync --extra dev
-uv run pytest -q     # ожидается 153 passed
+uv run pytest -q     # ожидается 182 passed
 ```
 
 Open WebUI: `http://localhost:3000` · LiteLLM: `http://localhost:4000` ·
@@ -250,7 +242,7 @@ Orchestrator health: `http://localhost:8089/healthz`.
 1. прочитать канон из раздела 4 (начать с `README.md` → `ROADMAP.md`
    раздел 0.4 → раздел 0.5 → раздел 0.6);
 2. свериться с `docs/LIVE_SMOKE.md` — что уже прогнано вживую;
-3. прогнать `uv run pytest -q` в `apps/orchestrator/` (ожидается 153 passed);
+3. прогнать `uv run pytest -q` в `apps/orchestrator/` (ожидается 182 passed);
 4. только потом брать в работу следующий приоритет — **шаг из victory
    plan (раздел 0.4), а не «что захочу»**;
 5. при любой обрезке wow-компонента — сразу обновлять соответствующий

@@ -30,6 +30,12 @@ def choose_model(classification: dict[str, Any], settings: Settings) -> dict[str
     if has_image:
         role_key = ROLE_VISION
         reason = "vision_multimodal_content"
+    elif task_type == "deep_research":
+        # Council short-circuit intercepts this in main.py; this mapping
+        # is only a defensive fallback if the council is disabled and
+        # normal routing takes over.
+        role_key = ROLE_REASONING_LOCAL
+        reason = "deep_research_council_fallback"
     elif task_type in ("summarization", "file_analysis"):
         role_key = ROLE_DOC
         reason = "document_or_summary_heuristic"

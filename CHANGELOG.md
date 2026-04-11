@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Docs:** `ROADMAP.md` (§0.2 row 13, §0.4 шаг 1/5, §0.6 differentiation,
+  трек A), `README.md` (WOW-1 merge note), `docs/TEAM_BRIEF_RU.md`, and
+  `docs/NEW_CHAT_HANDOFF_RU.md` — синхронизированы с WOW-1 Expert Council
+  в `main` (`9393d30`) и базовым счётчиком **182** тестов.
+  Пересобран `docs/submission/GPTHub_features_matrix.xlsx` из матрицы.
+
 ### Added
 
 - **Authorship:** `README.md` (Author), root `AUTHORS.md`, and `authors` in
@@ -13,6 +21,12 @@
   in `main.py` reused the name `last_user_text`, shadowing the
   `memory.service.last_user_text` helper and breaking normal chat when
   memory retrieval ran. Renamed the local string to `image_intent_user_text`.
+- **`scripts/demo.sh` false WARN on image-gen:** bash glob was `*'!['`
+  (no trailing `*`), so the check only matched if the response **ended**
+  with `![`, which never happens. Fixed to `*'!['*'](http'*`. Row 3 is
+  now green end-to-end: `PASS=11 FAIL=0 WARN=0` via `demo.sh --skip-wow`
+  against live MWS `qwen-image`. Direct MWS probe from inside the
+  orchestrator container also returns a 200 with a real image URL.
 
 ### Added
 
@@ -52,6 +66,41 @@
   extra system block before role-prompt. 52 unit / integration tests
   in `test_memory_commands.py`, `test_memory_store.py`,
   `test_memory_service.py`.
+
+#### Phase D — WOW features
+
+- **Row 13 Expert Council (WOW-1)**: new
+  `apps/orchestrator/gpthub_orchestrator/council.py` with DEEP_RESEARCH
+  intent detection (`/research`, «глубокое исследование», `deep research`,
+  «совет экспертов», «мультиэкспертный…»), parallel fan-out via
+  `asyncio.gather(return_exceptions=True)` into three MWS branches —
+  `gpt-hub-turbo` (generalist persona), `gpt-hub-reasoning-or` (reasoning
+  persona), `gpt-hub-doc` (doc/long-context persona) — and a single
+  synthesis call through `gpt-hub-strong` (glm-4.6-357b) that produces
+  one OpenAI-compatible `chat.completion` in the canonical structure
+  «суть → Что говорит совет экспертов → Практические рекомендации».
+  Four safety layers: (1) per-branch timeout, (2) min-branches threshold
+  with strong-only fallback, (3) `merge_reasoning_exclude_into_body`
+  on every council call + `_strip_cot_blocks` CoT cleaner that never
+  returns empty, (4) CoT-dump heuristic that falls through to an
+  emergency composite response when synthesis leaks a meta-plan instead
+  of an answer. Wired into `main.py` between the memory-command and
+  image-gen short-circuits; `classifier.py` gained a
+  `TaskType.DEEP_RESEARCH` case; `router.py` defensively routes it to
+  the reasoning role when the short-circuit is disabled. 29 unit tests
+  in `tests/test_council.py` (happy / partial 2-of-3 / strong-only
+  fallback / all-fail / emergency composite / intent parametrized /
+  CoT strip / classifier wiring / response builders / empty-question
+  guard). Settings: `council_enabled`, `council_branch_timeout_seconds`,
+  `council_synthesis_timeout_seconds` (240 s), `council_expert_strong`,
+  `council_expert_reasoning`, `council_expert_doc`,
+  `council_synthesis_model`, `council_min_branches_for_synthesis`,
+  `council_max_expert_tokens` (700), `council_max_synthesis_tokens`
+  (3000). Live smoke: see `docs/LIVE_SMOKE.md` 2026-04-11 11:32 —
+  171 s end-to-end, 3/3 branches OK, 3425-char clean Russian synthesis,
+  `fallback_used=false`, no `<think>` leakage. Row 13 moved from
+  `Deferred (wow candidate)` to `Implemented (WOW-1)` in
+  `FEATURE_MATRIX.md`.
 
 #### Phase C — Partial → Implemented
 
@@ -100,11 +149,12 @@
 
 ### Validation
 
-- 63 → 153 tests passing (+90 new tests covering URL parsing, plain-text
+- 63 → 182 tests passing (+119 new tests covering URL parsing, plain-text
   ingest, ASR settings fallback, image generation intent and response
   shape, memory command parser, SQLite store CRUD + cosine search,
-  MWS embeddings client, and the end-to-end memory command executor with
-  MockTransport).
+  MWS embeddings client, the end-to-end memory command executor with
+  MockTransport, and the Expert Council fan-out / synthesis / fallback
+  / CoT-strip / classifier wiring).
 - MWS contracts directly probed with curl against `.env.mws.local`:
   - `POST /v1/chat/completions` with `mws-gpt-alpha` → 200 OK.
   - `POST /v1/images/generations` with `qwen-image` → 200 OK (URL + b64).
@@ -114,7 +164,6 @@
 ### Not yet done (tracked in ROADMAP section 0)
 
 - Row 7: enable Open WebUI Tavily web search via env.
-- Row 13 wow: Expert Council fan-out + synthesis.
 - Row 14 wow: PPTX generation via `python-pptx`.
 - Live E2E smoke through the docker stack (blocked on stopping the old
   `gpthub-v3-*` stack that holds ports 3000/4000/8089).

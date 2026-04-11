@@ -105,6 +105,7 @@ class TaskType(str, Enum):
     AUDIO_ANALYSIS = "audio_analysis"
     MULTIMODAL_WORKFLOW = "multimodal_workflow"
     PPTX = "pptx"
+    DEEP_RESEARCH = "deep_research"
 
 
 # PPTX: strong phrases beat doc/code heuristics; weak cues stay below doc-heavy / code / analyze.
@@ -230,12 +231,23 @@ def classify_messages(messages: list[dict[str, Any]]) -> dict[str, Any]:
     pptx_weak_ok = _pptx_intent_weak(last_user, lower) and not heavier_doc_or_code
     wants_pptx = pptx_strong or pptx_weak_ok
 
+    # Expert Council (deep research) wins over PPTX for text-only prompts; `is_council_request`
+    # is only evaluated without an image. Images: non-PPTX → image analysis; PPTX phrasing → pptx.
+    # We lazy-import here to avoid a classifier↔council import cycle.
+    deep_research_hit = False
+    if not has_image:
+        from gpthub_orchestrator.council import is_council_request  # local import to avoid cycle
+
+        deep_research_hit = is_council_request(last_user)
+
     if has_image and (analyze_hints or code_hints):
         task = TaskType.MULTIMODAL_WORKFLOW
+    elif has_image and not wants_pptx:
+        task = TaskType.IMAGE_ANALYSIS
+    elif deep_research_hit:
+        task = TaskType.DEEP_RESEARCH
     elif wants_pptx:
         task = TaskType.PPTX
-    elif has_image:
-        task = TaskType.IMAGE_ANALYSIS
     elif (doc_hints or long_text) and not has_image:
         task = TaskType.SUMMARIZATION if doc_hints else TaskType.FILE_ANALYSIS
     elif code_hints or analyze_hints:

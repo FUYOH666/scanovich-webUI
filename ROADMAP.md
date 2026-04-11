@@ -29,7 +29,7 @@
 
 | № | Фича | Путь | Статус |
 |---|---|---|---|
-| 13 | Deep Research = **Expert Council** | `task_type=DEEP_RESEARCH` → fan-out в `strong` + `reasoning` + `doc` → synthesis через `strong` → один chat.completion наружу, все вызовы видны в `X-GPTHub-Trace` | `[ ]` WOW-1 |
+| 13 | Deep Research = **Expert Council** | `task_type=DEEP_RESEARCH` → fan-out в `strong` + `reasoning` + `doc` → synthesis через `strong` → один chat.completion наружу, все вызовы видны в `X-GPTHub-Trace` | `[x]` WOW-1: влито в `main` (`9393d30`), live + полный `demo.sh` — `docs/LIVE_SMOKE.md` 2026-04-11 |
 | 14 | Генерация презентаций | `task_type=PPTX` → strong-модель генерит slide plan (JSON) → `python-pptx` → base64 attachment + markdown preview | `[ ]` WOW-3 |
 | 15 | `X-GPTHub-Trace` | Production-grade наблюдаемость routing/fallback/ingest | `[x]` |
 
@@ -62,9 +62,10 @@ Non-goals до самого конца:
 
 ### Шаг 1 — Live docker smoke (приоритет #1, box: 3 часа)
 
-**Почему первый:** у нас 153 unit-теста, но ноль подтверждений, что
-`docker compose up` реально поднимает стек. Это самый большой
-технический риск проекта.
+**Почему первый:** у нас **182** unit/integration теста в orchestrator;
+подтверждение compose и части сценариев уже в `docs/LIVE_SMOKE.md` (в т.ч.
+тег `smoke-green` и прогоны 2026-04-11). Оставшийся риск — полный P0/WebUI
+чеклист без пробелов.
 
 Что делаем:
 
@@ -144,7 +145,15 @@ Non-goals до самого конца:
 
 ### Шаг 5 — WOW-1 Expert Council (box: 6 часов, жёсткий)
 
-**Это самый рискованный компонент.** У него должен быть жёсткий kill switch.
+**Статус (2026-04):** выполнено и влито в `main` (merge `9393d30`).
+Реализация: `council.py`, short-circuit в `main.py`, `DEEP_RESEARCH` в
+`classifier.py`, 29 тестов в `tests/test_council.py`; живые прогоны —
+`docs/LIVE_SMOKE.md` (11:32 council, 11:46 полный `demo.sh`).
+
+Ниже — исходный дизайн и kill switch (архив постмортема; после успешного
+мержа к откату не призываем).
+
+**Это был самый рискованный компонент.** Kill switch оставлен для истории.
 
 Дизайн:
 
@@ -176,9 +185,9 @@ Non-goals до самого конца:
   Лучше честно не показать Council, чем показать «три эксперта, и каша
   на выходе».
 
-**Правило гигиены:** Council разрабатывается в **отдельной ветке**
-`wow/expert-council`. В main вливается **только** после зелёного прогона
-через WebUI.
+**Правило гигиены (выполнено):** разработка шла в ветке `wow/expert-council`;
+в `main` влито после зелёного end-to-end (в т.ч. `scripts/demo.sh` без
+`--skip-wow`, см. журнал).
 
 ### Шаг 6 — Репетиция демо-сценария (box: 1 час)
 
@@ -280,7 +289,7 @@ wow» и «сохранить baseline» — всегда сохраняем bas
 - `[ ]` mixed input: один запрос с PDF + image + audio + URL даёт один ответ
 - `[ ]` `X-GPTHub-Trace` виден в DevTools → Network → Headers для одного живого запроса
 - `[ ]` memory: «запомни X» → «что ты помнишь» работает end-to-end
-- `[ ]` (wow-1, если есть) Expert Council: /research запрос показывает 3 вызова в trace + synthesis
+- `[x]` Expert Council (WOW-1): `/research` и аналоги — fan-out + synthesis, см. `X-GPTHub-Trace` и `docs/LIVE_SMOKE.md` 2026-04-11
 - `[ ]` (wow-3, если есть) PPTX: «сделай презентацию» возвращает скачиваемый .pptx
 
 ### Submission artifacts
@@ -333,7 +342,7 @@ wow» и «сохранить baseline» — всегда сохраняем bas
    markdown-ответ со ссылками на источники.
 3. **Memory:** следующее сообщение — «что ты обо мне помнишь?» —
    возвращается сохранённый факт об интеграции MWS.
-4. **(wow-1, если есть) Expert Council:** «проведи глубокое исследование
+4. **Expert Council (WOW-1, в `main`):** «проведи глубокое исследование
    по этой теме» → три эксперта внутри → один synthesis ответ.
 5. **(wow-3, если есть) PPTX:** «сделай презентацию по этому разбору»
    → возвращается скачиваемый .pptx.
@@ -379,8 +388,8 @@ wow» и «сохранить baseline» — всегда сохраняем bas
 
 ### Трек A — Code (один человек)
 
-1. **Шаг 5 — Expert Council** в отдельной ветке `wow/expert-council`.
-2. **Шаг 7 — PPTX** (если остаётся время).
+1. **Шаг 5 — Expert Council** — **готово** в `main` (`9393d30`).
+2. **Шаг 7 — PPTX** (если остаётся время; ветка `wow/pptx` по kill switch плана).
 3. **Шаг 4 — Tavily toggle** (15 минут, в любой момент).
 
 ### Трек B — Infra / Smoke (один человек)

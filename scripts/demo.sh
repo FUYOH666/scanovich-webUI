@@ -181,7 +181,7 @@ resp="$(curl -sS \
   -H "$(auth_header)" \
   -X POST "${ORCHESTRATOR_URL}/v1/chat/completions" \
   -d "${img_body}" || true)"
-if [[ "${resp}" == *'![' && "${resp}" == *'](http'* ]] || [[ "${resp}" == *'data:image/png;base64'* ]]; then
+if [[ "${resp}" == *'!['*'](http'* ]] || [[ "${resp}" == *'data:image/png;base64'* ]]; then
   ok "image gen returned inline markdown image"
 elif [[ "${resp}" == *'"choices"'* ]]; then
   warn "image gen fell through to regular chat (MWS qwen-image may be down)"
