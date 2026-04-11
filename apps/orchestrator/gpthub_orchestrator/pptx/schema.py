@@ -7,9 +7,48 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 MAX_SLIDES = 20
 MAX_BULLETS_PER_SLIDE = 8
 
+# Semantic layout tags (inspired by presentation-ai DEFAULT_LAYOUTS); optional per slide.
+ALLOWED_SLIDE_KINDS: frozenset[str] = frozenset(
+    {
+        "bullets",
+        "columns",
+        "icons",
+        "cycle",
+        "arrows",
+        "arrow_vertical",
+        "timeline",
+        "pyramid",
+        "staircase",
+        "boxes",
+        "compare",
+        "before_after",
+        "pros_cons",
+        "table",
+        "charts",
+        "stats",
+    }
+)
+
 
 class PptxGenError(Exception):
     """Slide-plan LLM or deck build failure (caller may fall back to plain text)."""
+
+
+def normalize_slide_kind(value: object) -> str | None:
+    if value is None:
+        return None
+    s = str(value).strip().lower().replace("-", "_")
+    if not s or s in ("auto", "general"):
+        return None
+    if s == "arrowvertical":
+        s = "arrow_vertical"
+    if s == "beforeafter":
+        s = "before_after"
+    if s == "proscons":
+        s = "pros_cons"
+    if s in ALLOWED_SLIDE_KINDS:
+        return s
+    return None
 
 
 class SlideSpec(BaseModel):
@@ -18,6 +57,15 @@ class SlideSpec(BaseModel):
     title: str = ""
     bullets: list[str] = Field(default_factory=list)
     notes: str = ""
+    kind: str | None = Field(
+        default=None,
+        description="Optional layout intent (see ALLOWED_SLIDE_KINDS); file build may still use one template.",
+    )
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _coerce_kind(cls, v: object) -> str | None:
+        return normalize_slide_kind(v)
 
     @field_validator("bullets", mode="before")
     @classmethod

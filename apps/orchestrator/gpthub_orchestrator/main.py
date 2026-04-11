@@ -6,6 +6,7 @@ import asyncio
 import codecs
 import json
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
@@ -43,6 +44,7 @@ from gpthub_orchestrator.pptx import (
     build_pptx_error_sse_chunks,
     build_pptx_from_plan,
     build_pptx_sse_chunks,
+    load_stripped_base_presentation,
     request_slide_plan,
 )
 from gpthub_orchestrator.memory.service import (
@@ -463,13 +465,33 @@ async def chat_completions(
 
         try:
             async with asyncio.timeout(settings.pptx_plan_timeout_seconds):
-                plan = await request_slide_plan(
-                    http,
-                    settings,
-                    body["messages"],
-                    authorization=auth_header,
+                plan, base_prs = await asyncio.gather(
+                    request_slide_plan(
+                        http,
+                        settings,
+                        body["messages"],
+                        authorization=auth_header,
+                    ),
+                    asyncio.to_thread(load_stripped_base_presentation, settings),
                 )
-                pptx_blob = build_pptx_from_plan(plan)
+                t_build = time.perf_counter()
+                pptx_blob = await asyncio.to_thread(
+                    build_pptx_from_plan,
+                    plan,
+                    settings=settings,
+                    base_prs=base_prs,
+                )
+                logger.info(
+                    "pptx_timing %s",
+                    json.dumps(
+                        {
+                            "phase": "build_deck_ms",
+                            "ms": round((time.perf_counter() - t_build) * 1000, 1),
+                            "pptx_bytes": len(pptx_blob),
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
         except TimeoutError:
             logger.warning("pptx_gen_failed err=timeout")
             return _pptx_error_response({"status": "error", "reason": "timeout"})

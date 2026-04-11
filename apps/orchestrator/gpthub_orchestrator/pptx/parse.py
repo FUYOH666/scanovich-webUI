@@ -6,7 +6,7 @@ import json
 import re
 from typing import Any
 
-from gpthub_orchestrator.pptx.schema import MAX_SLIDES, SlidePlan
+from gpthub_orchestrator.pptx.schema import MAX_SLIDES, SlidePlan, SlideSpec, normalize_slide_kind
 
 _FENCE = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
 
@@ -36,6 +36,7 @@ def slide_plan_from_parsed_dict(data: dict[str, Any]) -> SlidePlan:
                 "title": item.get("title", ""),
                 "bullets": item.get("bullets"),
                 "notes": item.get("notes", ""),
+                "kind": normalize_slide_kind(item.get("kind")),
             }
         )
     return SlidePlan.model_validate({"slides": normalized})
@@ -50,3 +51,53 @@ def parse_slide_plan_text(model_text: str) -> SlidePlan:
     if not plan.slides:
         raise ValueError("empty_slides")
     return plan
+
+
+def parse_outline_plan_text(model_text: str) -> SlidePlan:
+    """Outline step: titles (+ optional kind); bullets/notes omitted or empty."""
+    fragment = extract_json_object(model_text)
+    data = json.loads(fragment)
+    if not isinstance(data, dict):
+        raise ValueError("json_not_object")
+    plan = slide_plan_from_parsed_dict(data)
+    if not plan.slides:
+        raise ValueError("empty_slides")
+    for s in plan.slides:
+        if not (s.title or "").strip():
+            raise ValueError("outline_empty_title")
+    return plan
+
+
+def parse_single_slide_detail_text(model_text: str) -> dict[str, Any]:
+    """One-slide JSON object or {slides:[one]}."""
+    fragment = extract_json_object(model_text)
+    data = json.loads(fragment)
+    if not isinstance(data, dict):
+        raise ValueError("json_not_object")
+    if "slides" in data:
+        items = data.get("slides")
+        if isinstance(items, list) and len(items) == 1 and isinstance(items[0], dict):
+            data = items[0]
+        elif isinstance(items, list) and len(items) > 1:
+            raise ValueError("multi_slide_in_detail")
+        else:
+            raise ValueError("bad_slides_array")
+    return data
+
+
+def slide_spec_from_agent_payload(
+    payload: dict[str, Any],
+    *,
+    title_fallback: str,
+    kind_fallback: str | None,
+) -> SlideSpec:
+    raw_kind = payload.get("kind")
+    if raw_kind is None or raw_kind == "":
+        raw_kind = kind_fallback
+    merged: dict[str, Any] = {
+        "title": (str(payload.get("title", "")).strip() or title_fallback).strip(),
+        "bullets": payload.get("bullets"),
+        "notes": payload.get("notes", "") or "",
+        "kind": raw_kind,
+    }
+    return SlideSpec.model_validate(merged)

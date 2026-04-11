@@ -42,6 +42,7 @@ async def test_pptx_short_circuit_non_stream_ok():
                 litellm_base_url="http://litellm.test:4000",
                 orchestrator_api_key="test-key",
                 pptx_gen_enabled=True,
+                pptx_asset_templates_enabled=False,
                 image_gen_enabled=False,
                 greeting_canned_response_enabled=False,
             )
@@ -87,6 +88,7 @@ async def test_pptx_short_circuit_plan_invalid_returns_200_with_trace_error():
                 litellm_base_url="http://litellm.test:4000",
                 orchestrator_api_key="test-key",
                 pptx_gen_enabled=True,
+                pptx_asset_templates_enabled=False,
                 image_gen_enabled=False,
                 greeting_canned_response_enabled=False,
             )

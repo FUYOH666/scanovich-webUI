@@ -148,6 +148,52 @@ class Settings(BaseSettings):
         le=600.0,
         description="Wall-clock limit for plan LLM + deck build in PPTX short-circuit.",
     )
+    pptx_parallel_slide_agents_enabled: bool = Field(
+        default=True,
+        description=(
+            "If true, first LLM call returns slide titles/outline only, then one LiteLLM call per slide "
+            "in parallel (bounded by pptx_slide_agents_concurrency)."
+        ),
+    )
+    pptx_slide_agents_concurrency: int = Field(
+        default=4,
+        ge=1,
+        le=32,
+        description="Max concurrent per-slide LLM calls when pptx_parallel_slide_agents_enabled.",
+    )
+    pptx_plan_tone: str = Field(
+        default="auto",
+        description="Tone hint for slide-plan LLM (auto|general|persuasive|inspiring|instructive|engaging).",
+    )
+    pptx_plan_audience: str = Field(
+        default="auto",
+        description="Audience hint for slide-plan LLM (auto|general|business|investor|teacher|student).",
+    )
+    pptx_plan_scenario: str = Field(
+        default="auto",
+        description=(
+            "Scenario hint for slide-plan LLM "
+            "(auto|general|analysis-report|teaching-training|promotional-materials|public-speeches)."
+        ),
+    )
+    pptx_plan_text_content: Literal["minimal", "concise", "detailed", "extensive"] = Field(
+        default="concise",
+        description="Target verbosity for bullets/slide text in PPTX plan (presentation-ai style).",
+    )
+    pptx_asset_templates_enabled: bool = Field(
+        default=True,
+        description="If true, use .pptx files from pptx_templates_dir or built-in assets/pttx paths.",
+    )
+    pptx_templates_dir: str = Field(
+        default="",
+        description="Override directory of .pptx templates; empty = auto (/app/assets/pttx or repo assets/pttx).",
+    )
+    pptx_template_index: int = Field(
+        default=0,
+        ge=0,
+        le=64,
+        description="Pick template from sorted *.pptx in directory (index wraps modulo file count).",
+    )
     memory_enabled: bool = Field(
         default=True,
         description="If true, orchestrator detects memory commands and injects retrieved facts.",
