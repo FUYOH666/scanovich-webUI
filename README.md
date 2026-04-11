@@ -1,93 +1,114 @@
-# template
+# GPTHub Prod
 
-Template for task: Репозиторий для работы
+`gpthub-prod` is a new minimal product repo for the GPTHub runtime spine. It keeps one core architecture path only:
 
-## Getting started
+`Open WebUI -> orchestrator -> LiteLLM -> MWS`
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+The repo is intentionally frozen around feature rows `1-12` and `P0` only. Everything outside that baseline stays out of scope until the core path is stable. The only differentiator this repo is allowed to optimize for is `mixed input` in one chat flow.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## What This Repo Contains
 
-## Add your files
+- `apps/orchestrator/`: the preserved FastAPI runtime spine and focused tests.
+- `apps/embedding_shim/`: optional shim that normalizes host embeddings for Open WebUI RAG.
+- `infra/docker-compose.yml`: self-contained stack wiring for WebUI, orchestrator, LiteLLM, and optional RAG support.
+- `infra/litellm/config.yaml`: vendored LiteLLM alias config, rewritten for an MWS-first baseline.
+- Canon docs that explain the architecture, frozen roadmap, and current feature baseline without legacy branch sprawl.
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+## Quick Start
 
+```bash
+cp .env.example .env
+cp .env.mws.local.example .env.mws.local
+# fill in the secrets
+
+docker compose -f infra/docker-compose.yml up -d --build
 ```
-cd existing_repo
-git remote add origin https://git.truetecharena.ru/tta/true-tech-hack2026-gpthub/template.git
-git branch -M main
-git push -uf origin main
+
+For the optional RAG profile:
+
+```bash
+docker compose -f infra/docker-compose.yml --profile rag up -d --build
 ```
 
-## Integrate with your tools
+Run orchestrator tests locally with dev dependencies:
 
-- [ ] [Set up project integrations](https://git.truetecharena.ru/tta/true-tech-hack2026-gpthub/template/-/settings/integrations)
+```bash
+cd apps/orchestrator
+uv sync --extra dev
+uv run pytest -q
+```
 
-## Collaborate with your team
+Open WebUI will be on `http://localhost:3000`, LiteLLM on `http://localhost:4000`, and the orchestrator health endpoint on `http://localhost:8089/healthz`.
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+## Demo Lock
 
-## Test and Deploy
+The demo flow is deliberately narrow:
 
-Use the built-in continuous integration in GitLab.
+1. User sends one chat request in Open WebUI.
+2. The request reaches the orchestrator through the OpenAI-compatible facade.
+3. The orchestrator classifies the request, injects mixed-input artifacts when present, applies role/system policy, and calls LiteLLM.
+4. LiteLLM forwards to MWS using the vendored alias map.
+5. The user sees one answer, while routing evidence stays in logs and `X-GPTHub-Trace`.
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+The only demo differentiator is `mixed input`: one request can combine text, image, PDF, and audio-derived context without introducing extra product modes.
 
-***
+Optional `rag` support is infrastructure for Open WebUI, not a second flagship product mode. The same applies to `CODE_ROUTE_PREFERENCE`: it changes prompt flavor, not the core architecture path.
 
-# Editing this README
+## Current State
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+This repo contains a runnable product spine with **182 passing unit +
+integration tests**. What's live in code right now:
 
-## Suggestions for a good README
+- text chat through the orchestrator facade (row 1)
+- automatic + manual model choice via role-backed alias chain (rows 10, 11)
+- markdown / code rendering via OpenAI-compatible passthrough (row 12)
+- image-aware multimodal routing for VLM (row 5)
+- mixed-input ingest: PDF, plain text (≈30 extensions), audio, and **URL
+  fetch with SSRF protection** (rows 6, 8)
+- audio ingest + automatic ASR against MWS `whisper-medium` (row 4)
+- **in-chat image generation** via a MWS `/images/generations`
+  short-circuit on `qwen-image` (row 3)
+- **long-term memory**: SQLite facts store + MWS `qwen3-embedding-8b`
+  retrieval + "запомни / забудь / что помнишь" command parser (row 9)
+- **WOW-1 Expert Council (row 13)** — merged to `main` (`9393d30`): `/research`
+  or «глубокое исследование» → parallel fan-out to `gpt-hub-turbo`
+  (generalist), `gpt-hub-reasoning-or` (reasoning), `gpt-hub-doc` (doc) →
+  `gpt-hub-strong` (glm-4.6-357b) synthesis, one OpenAI-compatible
+  `chat.completion` in the «суть → Что говорит совет экспертов →
+  Практические рекомендации» structure. Live smoke 2026-04-11 11:32:
+  171 s, 3/3 branches, 3425-char clean Russian synthesis; full `demo.sh`
+  (no `--skip-wow`) green same day — see `docs/LIVE_SMOKE.md`.
+- voice chat through Open WebUI STT/TTS (row 2, UI-managed)
+- `X-GPTHub-Trace` with full routing / fallback / ingest observability (row 15)
+- optional embedding normalization for RAG mode (infra only)
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+Still open inside the P0 scope:
 
-## Name
-Choose a self-explaining name for your project.
+- row 7 web search — needs `ENABLE_WEB_SEARCH=true` + `TAVILY_API_KEY` in env;
+- WOW-3 PPTX generation (row 14) — planned as a wow-feature inside
+  the "one chat flow" constraint.
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+All gaps and phases are tracked in `ROADMAP.md` (section 0) and
+`FEATURE_MATRIX.md`. Live model snapshot is in `docs/MWS_CATALOG.md`.
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+## Author
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+This repository is authored and maintained by **Aleksandr Mordvinov**
+([@FUYOH666](https://github.com/FUYOH666)). There are no other listed code
+contributors at this time; people invited on GitHub have repository access
+only. A short machine-readable list is in `AUTHORS.md`.
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+## Read Next
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+- `docs/NEW_CHAT_HANDOFF_RU.md` — single-file handoff for a new chat window
+- `docs/TEAM_BRIEF_RU.md` — single-file team briefing
+- `ARCHITECTURE.md`
+- `ROADMAP.md` — sections 0.4 (victory plan), 0.5 (kill switches), 0.6 (victory checklist)
+- `FEATURE_MATRIX.md` — source of truth for the submission xlsx
+- `docs/LIVE_SMOKE.md` — journal of every live run through the docker stack
+- `docs/submission/` — track C exports (feature xlsx from matrix, diagram sources, slide skeleton)
+- `docs/MWS_CATALOG.md` — live MWS model snapshot
+- `docs/PROMPT_PRECEDENCE.md`
+- `docs/WEBUI_PAYLOAD.md`
+- `scripts/demo.sh` — idempotent curl smoke covering the Demo Lock scenario
+- `CHANGELOG.md`

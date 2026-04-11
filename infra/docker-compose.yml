@@ -1,0 +1,120 @@
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm@sha256:9e1536c6a9219519f024f221706b20b012ca5176988164798adc5c7fe011e5d5
+    container_name: gpthub-prod-litellm
+    restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: true
+      - path: ../.env.mws.local
+        required: false
+    ports:
+      - "4000:4000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml:ro
+    command:
+      - "--config"
+      - "/app/config.yaml"
+      - "--port"
+      - "4000"
+    networks:
+      - gpthub-prod-net
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=2)\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: apps/orchestrator/Dockerfile
+    container_name: gpthub-prod-orchestrator
+    restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: true
+      - path: ../.env.mws.local
+        required: false
+    environment:
+      LITELLM_BASE_URL: http://litellm:4000
+    ports:
+      - "8089:8000"
+    depends_on:
+      litellm:
+        condition: service_healthy
+    networks:
+      - gpthub-prod-net
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=2)\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  embedding-shim:
+    profiles:
+      - rag
+    build:
+      context: ..
+      dockerfile: apps/embedding_shim/Dockerfile
+    container_name: gpthub-prod-embedding-shim
+    restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - gpthub-prod-net
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:v0.8.12
+    container_name: gpthub-prod-open-webui
+    restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: true
+    environment:
+      OPENAI_API_BASE_URL: http://orchestrator:8000/v1
+    ports:
+      - "3000:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - open-webui-data:/app/backend/data
+    depends_on:
+      litellm:
+        condition: service_healthy
+      orchestrator:
+        condition: service_healthy
+    networks:
+      - gpthub-prod-net
+
+networks:
+  gpthub-prod-net:
+    driver: bridge
+
+volumes:
+  open-webui-data:
