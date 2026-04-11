@@ -60,12 +60,25 @@
 - **Trace highlights:** Row1/8/10 returned `X-GPTHub-Trace`; memory remember/recall OK.
 - **Notes:** Fixed orchestrator bug where image-intent block shadowed `last_user_text()` helper ([`main.py`](../apps/orchestrator/gpthub_orchestrator/main.py) rename to `image_intent_user_text`). **WebUI manual Demo Lock chunk** (текст + PDF + «нарисуй кота» в браузере) — оператор должен прогнать отдельно; здесь зафиксированы compose + health + `demo.sh` как автоматический baseline.
 
+## 2026-04-11 — Step 1 WebUI smoke (текст + PDF + картинка), ROADMAP §0.4
+
+- **Stack commit:** `647d49d`
+- **Env:** `docker compose -f infra/docker-compose.yml`; Open WebUI `http://localhost:3000`; `.env` / `.env.mws.local` как в рабочем прогоне (секреты не логируем).
+- **Input:** (1) текстовый вопрос в чате — ответ получен; (2) запрос на генерацию картинки (в духе «нарисуй кота») — картинка сгенерировалась; (3) PDF с вопросом — **ошибка**, чтение/ингест PDF не прошёл.
+- **Model(s) used:** _по UI/trace не выписывались в этой записи_
+- **Latency:** _—_
+- **Result:** **PARTIAL** — текст и image-gen OK; PDF — **FAIL** (см. ниже), при этом сессия в WebUI продолжает работать.
+- **Trace highlights:** _—_
+- **Notes:** Сообщение об ошибке при работе с PDF: `'NoneType' object has no attribute 'encode'`. Нужен отдельный разбор (Open WebUI vs orchestrator ingest). Скрин источника:
+
+![Step 1 WebUI smoke 2026-04-11](./sources/0.4.%20smoke-test-11.04-UI.png)
+
 ---
 
 ## Шаг 1 — Docker bring-up (чеклист ROADMAP §0.4)
 
-Сводка: три журнальных записи выше закрывают teardown / compose / health+curl.
-Дополнительно вручную: три сценария **через WebUI** (текст, PDF+вопрос, image prompt) — перенести в отдельные записи шага 2 при первом полном P0-прогоне.
+Сводка: три журнальных записи выше закрывают teardown / compose / health+curl; отдельная запись **«Step 1 WebUI smoke»** фиксирует ручной прогон трёх сценариев в браузере (текст OK, картинка OK, PDF — ошибка `encode`).
+Дополнительно: при полном P0-прогоне детализировать ряды 1–12 в секции шага 2 ниже.
 
 ---
 
