@@ -138,6 +138,16 @@ class Settings(BaseSettings):
         description="MWS image model id used for /images/generations short-circuit.",
     )
     image_gen_timeout_seconds: float = Field(default=120.0, ge=5.0, le=600.0)
+    pptx_gen_enabled: bool = Field(
+        default=True,
+        description="If true, task_type pptx short-circuits to slide-plan LLM + python-pptx deck.",
+    )
+    pptx_plan_timeout_seconds: float = Field(
+        default=120.0,
+        ge=15.0,
+        le=600.0,
+        description="Wall-clock limit for plan LLM + deck build in PPTX short-circuit.",
+    )
     memory_enabled: bool = Field(
         default=True,
         description="If true, orchestrator detects memory commands and injects retrieved facts.",

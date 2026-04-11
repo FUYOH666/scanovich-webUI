@@ -34,6 +34,7 @@ def build_trace(
     artifacts: list[dict[str, Any]] | None = None,
     orchestrator_fallback: dict[str, Any] | None = None,
     image_gen: dict[str, Any] | None = None,
+    pptx: dict[str, Any] | None = None,
     prompt_version: str | None = None,
     classifier_source: str = "heuristic",
     server_clock_iso: str | None = None,
@@ -69,6 +70,8 @@ def build_trace(
         trace["orchestrator_fallback"] = orchestrator_fallback
     if image_gen is not None:
         trace["image_gen"] = image_gen
+    if pptx is not None:
+        trace["pptx"] = pptx
     if ingest_ms is not None:
         trace["ingest_ms"] = round(float(ingest_ms), 3)
     return trace

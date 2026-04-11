@@ -27,3 +27,15 @@ def test_build_trace_image_gen_ok():
     )
     assert t["image_gen"] == {"status": "ok", "model": "qwen-image"}
     assert "orchestrator_fallback" not in t
+
+
+def test_build_trace_pptx_ok():
+    t = build_trace(
+        classification={"task_type": "pptx", "modalities": ["text"]},
+        router_suggestion={"model_role": "reasoning_code_local", "fallback_aliases": ["gpt-hub-strong"]},
+        model_used="gpt-hub",
+        pptx={"status": "ok", "slides": 3},
+        prompt_version="gpthub-prod-1",
+    )
+    assert t["pptx"] == {"status": "ok", "slides": 3}
+    assert "orchestrator_fallback" not in t

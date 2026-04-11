@@ -1,0 +1,32 @@
+"""PPTX slide-plan LLM + deck build (WOW-3)."""
+
+from __future__ import annotations
+
+from gpthub_orchestrator.pptx.build import build_pptx_from_plan
+from gpthub_orchestrator.pptx.parse import extract_json_object, parse_slide_plan_text
+from gpthub_orchestrator.pptx.plan import request_slide_plan
+from gpthub_orchestrator.pptx.response import (
+    build_pptx_chat_completion,
+    build_pptx_error_chat_completion,
+    build_pptx_error_sse_chunks,
+    build_pptx_sse_chunks,
+    markdown_preview_with_download,
+)
+from gpthub_orchestrator.pptx.schema import MAX_BULLETS_PER_SLIDE, MAX_SLIDES, PptxGenError, SlidePlan, SlideSpec
+
+__all__ = [
+    "MAX_BULLETS_PER_SLIDE",
+    "MAX_SLIDES",
+    "PptxGenError",
+    "SlidePlan",
+    "SlideSpec",
+    "build_pptx_chat_completion",
+    "build_pptx_error_chat_completion",
+    "build_pptx_error_sse_chunks",
+    "build_pptx_from_plan",
+    "build_pptx_sse_chunks",
+    "extract_json_object",
+    "markdown_preview_with_download",
+    "parse_slide_plan_text",
+    "request_slide_plan",
+]

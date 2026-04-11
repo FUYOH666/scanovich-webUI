@@ -68,3 +68,18 @@ def test_router_greeting_or_tiny():
     assert out["model_role"] == "fast_text_chat"
     assert out["model_name"] == "gpt-hub-fast"
     assert "gpt-hub-strong" not in out["fallback_aliases"]
+
+
+def test_router_pptx_uses_reasoning_chain():
+    s = _settings(code_route_preference="local")
+    out = choose_model({"modalities": ["text"], "task_type": "pptx"}, s)
+    assert out["model_role"] == "reasoning_code_local"
+    assert out["model_name"] == "gpt-hub-strong"
+    assert out["reason"] == "pptx_slide_plan_json"
+
+
+def test_router_pptx_openrouter():
+    s = _settings(code_route_preference="openrouter")
+    out = choose_model({"modalities": ["text"], "task_type": "pptx"}, s)
+    assert out["model_role"] == "reasoning_code_openrouter"
+    assert out["reason"] == "pptx_slide_plan_json_openrouter"

@@ -104,6 +104,48 @@ class TaskType(str, Enum):
     IMAGE_ANALYSIS = "image_analysis"
     AUDIO_ANALYSIS = "audio_analysis"
     MULTIMODAL_WORKFLOW = "multimodal_workflow"
+    PPTX = "pptx"
+
+
+# PPTX: strong phrases beat doc/code heuristics; weak cues stay below doc-heavy / code / analyze.
+_PPTX_STRONG = re.compile(
+    r"(?:^|[\s,./])/pptx\b|"
+    r"(?:сделай|сделайте|создай|создайте|подготовь|подготовьте|напиши|напишите|"
+    r"сгенерируй|сгенерируйте|составь|составьте)\s+презентац|"
+    r"презентаци[яию]\s+по\s+(?:этому|этой|этим|документу|тексту|файлу|материалу|теме)\b|"
+    r"build\s+(?:a\s+)?deck\b|"
+    r"make\s+(?:a\s+)?presentation\b|"
+    r"generate\s+(?:a\s+)?presentation\b",
+    re.IGNORECASE | re.UNICODE,
+)
+_PPTX_WEAK_SLIDES_RU = re.compile(
+    r"(?:сделай|сделайте|создай|создайте|нужны|подготовь|подготовьте|сгенерируй|сгенерируйте)\s+слайд",
+    re.IGNORECASE | re.UNICODE,
+)
+_PPTX_WEAK_EN = re.compile(
+    r"\b(?:outline|draft)\s+(?:a\s+)?deck\b|"
+    r"\bslides?\s+(?:for|about|on)\s+\w",
+    re.IGNORECASE | re.UNICODE,
+)
+_PPTX_WEAK_DECK_PAIR = re.compile(
+    r"\bdeck\b.*\b(?:slides?|презентац|pptx|powerpoint)\b|"
+    r"\b(?:slides?|презентац|pptx|powerpoint)\b.*\bdeck\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def _pptx_intent_strong(text: str) -> bool:
+    return bool(_PPTX_STRONG.search(text))
+
+
+def _pptx_intent_weak(text: str, lower: str) -> bool:
+    if _PPTX_WEAK_SLIDES_RU.search(lower):
+        return True
+    if _PPTX_WEAK_EN.search(lower):
+        return True
+    if len(text.strip()) < 32:
+        return False
+    return bool(_PPTX_WEAK_DECK_PAIR.search(lower))
 
 
 def _flatten_text(parts: list[dict[str, Any]] | str) -> str:
@@ -183,8 +225,15 @@ def classify_messages(messages: list[dict[str, Any]]) -> dict[str, Any]:
     if has_image:
         modalities.append("image")
 
+    pptx_strong = _pptx_intent_strong(last_user)
+    heavier_doc_or_code = doc_hints or code_hints or analyze_hints
+    pptx_weak_ok = _pptx_intent_weak(last_user, lower) and not heavier_doc_or_code
+    wants_pptx = pptx_strong or pptx_weak_ok
+
     if has_image and (analyze_hints or code_hints):
         task = TaskType.MULTIMODAL_WORKFLOW
+    elif wants_pptx:
+        task = TaskType.PPTX
     elif has_image:
         task = TaskType.IMAGE_ANALYSIS
     elif (doc_hints or long_text) and not has_image:
@@ -202,6 +251,8 @@ def classify_messages(messages: list[dict[str, Any]]) -> dict[str, Any]:
     if code_hints:
         complexity += 1
     if analyze_hints:
+        complexity += 1
+    if task == TaskType.PPTX:
         complexity += 1
 
     out = {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import codecs
 import json
 import logging
@@ -27,6 +28,15 @@ from gpthub_orchestrator.image_gen import (
     extract_image_prompt,
     generate_image_via_mws,
     is_image_generation_request,
+)
+from gpthub_orchestrator.pptx import (
+    PptxGenError,
+    build_pptx_chat_completion,
+    build_pptx_error_chat_completion,
+    build_pptx_error_sse_chunks,
+    build_pptx_from_plan,
+    build_pptx_sse_chunks,
+    request_slide_plan,
 )
 from gpthub_orchestrator.memory.service import (
     build_memory_chat_completion,
@@ -235,6 +245,7 @@ async def chat_completions(
     classification = classify_messages(body["messages"])
     router_suggestion = choose_model(classification, settings)
     clock_prefix, server_clock_iso = build_session_clock_block(settings)
+    auth_header = request.headers.get("Authorization", "")
 
     # Memory command short-circuit: «запомни / забудь / что ты помнишь».
     memory_store: MemoryStore | None = getattr(request.app.state, "memory_store", None)
@@ -348,6 +359,100 @@ async def chat_completions(
                 )
                 return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
 
+    # PPTX short-circuit: slide-plan via LiteLLM (strong chain) + python-pptx (after image intent).
+    if settings.pptx_gen_enabled and classification.get("task_type") == "pptx":
+        model_vis = client_visible_model_id(body, settings.orchestrator_public_model_id)
+        prompt_version = load_role_prompts(settings.role_prompts_path).prompt_version
+        pptx_user_err = (
+            "Не удалось собрать презентацию. Попробуйте упростить запрос или повторить позже."
+        )
+
+        def _pptx_error_response(pptx_meta: dict[str, Any]) -> Response:
+            trace = build_trace(
+                classification=classification,
+                router_suggestion=router_suggestion,
+                model_used=model_vis,
+                artifacts=ingest_artifacts,
+                pptx=pptx_meta,
+                prompt_version=prompt_version,
+                classifier_source="heuristic",
+                server_clock_iso=server_clock_iso,
+                ingest_ms=ingest_ms,
+            )
+            logger.info("execution_trace %s", json.dumps(trace, ensure_ascii=False))
+            trace_hdr = trace_to_header_value(trace)
+            if bool(body.get("stream")):
+
+                async def pptx_err_sse():
+                    for ch in build_pptx_error_sse_chunks(model_label=model_vis, message=pptx_user_err):
+                        yield ch
+
+                return StreamingResponse(
+                    pptx_err_sse(),
+                    media_type="text/event-stream",
+                    headers={"X-GPTHub-Trace": trace_hdr},
+                )
+            out = build_pptx_error_chat_completion(model_label=model_vis, message=pptx_user_err)
+            return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
+
+        try:
+            async with asyncio.timeout(settings.pptx_plan_timeout_seconds):
+                plan = await request_slide_plan(
+                    http,
+                    settings,
+                    body["messages"],
+                    authorization=auth_header,
+                )
+                pptx_blob = build_pptx_from_plan(plan)
+        except TimeoutError:
+            logger.warning("pptx_gen_failed err=timeout")
+            return _pptx_error_response({"status": "error", "reason": "timeout"})
+        except PptxGenError as e:
+            reason = str(e) if e.args else "unknown"
+            if reason == "slide_plan_json_invalid":
+                logger.warning("pptx_plan_invalid err=%s", e)
+            else:
+                logger.warning("pptx_gen_failed err=%s", e)
+            return _pptx_error_response({"status": "error", "reason": reason})
+        except Exception as e:  # noqa: BLE001
+            logger.warning("pptx_gen_failed err=%s", e)
+            return _pptx_error_response({"status": "error", "reason": type(e).__name__})
+        else:
+            trace = build_trace(
+                classification=classification,
+                router_suggestion=router_suggestion,
+                model_used=model_vis,
+                artifacts=ingest_artifacts,
+                pptx={"status": "ok", "slides": len(plan.slides)},
+                prompt_version=prompt_version,
+                classifier_source="heuristic",
+                server_clock_iso=server_clock_iso,
+                ingest_ms=ingest_ms,
+            )
+            logger.info("execution_trace %s", json.dumps(trace, ensure_ascii=False))
+            trace_hdr = trace_to_header_value(trace)
+            if bool(body.get("stream")):
+
+                async def pptx_ok_sse():
+                    for ch in build_pptx_sse_chunks(
+                        model_label=model_vis,
+                        plan=plan,
+                        pptx_bytes=pptx_blob,
+                    ):
+                        yield ch
+
+                return StreamingResponse(
+                    pptx_ok_sse(),
+                    media_type="text/event-stream",
+                    headers={"X-GPTHub-Trace": trace_hdr},
+                )
+            out = build_pptx_chat_completion(
+                model_label=model_vis,
+                plan=plan,
+                pptx_bytes=pptx_blob,
+            )
+            return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
+
     if settings.greeting_canned_response_enabled and greeting_canned_eligible(classification):
         role_prompts = load_role_prompts(settings.role_prompts_path)
         prompt_version = role_prompts.prompt_version
@@ -442,7 +547,6 @@ async def chat_completions(
 
     stream = bool(body.get("stream"))
     url = f"{settings.litellm_base_url.rstrip('/')}/v1/chat/completions"
-    auth_header = request.headers.get("Authorization", "")
 
     if stream:
         stream_fb: dict[str, Any] = {

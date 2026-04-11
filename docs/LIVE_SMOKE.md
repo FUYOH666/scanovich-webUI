@@ -84,6 +84,17 @@
 - **Trace highlights:** В логах контейнера WebUI: `open_webui.retrieval.utils:query_doc` / `query_doc:result` — списки id чанков и метаданные PDF (`embedding_config` с `openai` + `qwen3-embedding-8b`). В UI: «Найден 1 источник», ответ с привязкой к файлу.
 - **Notes:** Закрывает PDF-часть после исторического **PARTIAL** (ошибка `'NoneType' object has no attribute 'encode'` без `RAG_EMBEDDING_ENGINE=openai` и до выравнивания upstream URL/ключа для шима). В `apps/embedding_shim/main.py`: нормализация URL (`…/v1` vs корень), опциональный `env_file` `.env.mws.local` в compose, прокси без «грязного» логирования тел ответов. Скрин этой итерации при желании добавить в `docs/sources/` отдельным файлом.
 
+## 2026-04-11 — PPTX smoke (WebUI + orchestrator)
+
+- **Stack commit:** _—_ (актуальный SHA: `git -C scanovich-webUI rev-parse --short HEAD`)
+- **Env:** как в **Step 1 WebUI RAG smoke** (`--profile rag`, `embedding-shim`, `.env` + `.env.mws.local`); WebUI модель `gpt-hub`; оркестратор `pptx_gen_enabled` по умолчанию вкл.
+- **Input:** (1) только текст: «Сгенерируй презентацию по теме природа»; (2) PDF в чат (`Large_Language_Model-Based_Agents_for_Software_Eng.pdf` или аналог), затем «Сгенерируй презентацию… проблематике данной статьи» в той же ветке после (1).
+- **Model(s) used:** UI — `gpt-hub`; по `X-GPTHub-Trace` / `execution_trace`: `task_type: pptx`, router `reason: pptx_slide_plan_json`, роль `reasoning_code_local`, цепочка с `gpt-hub-strong`.
+- **Latency:** ~**30000–50000 ms** на один вызов LiteLLM под JSON-план слайдов (по меткам времени в логе между classify и ответом).
+- **Result:** **PARTIAL** — (1) **OK** (превью + `.pptx` по data URI); (2) содержание статьи в слайдах не отражено, в UI «Источники не найдены».
+- **Trace highlights:** оркестратор: `pptx: {status: ok, slides: N}`, `attachments_detected: ["text"]`, `artifacts: []`. WebUI: ingest PDF (`application/pdf`, `save_docs_to_vector_db`, коллекция с сотнями чанков); ошибка **`502`** на `http://embedding-shim:8000/v1/embeddings` в `get_sources_from_items` (см. лог).
+- **Notes:** Снимок стека: [`logs/compose-20260411-144332.log`](../logs/compose-20260411-144332.log) (`make docker-logs-save`). План PPTX собирается из текста `messages` без парсинга PDF на стороне оркестратора; для (2) нужны подмешанные RAG-источники и стабильный `embedding-shim`.
+
 ---
 
 ## Шаг 1 — Docker bring-up (чеклист ROADMAP §0.4)
