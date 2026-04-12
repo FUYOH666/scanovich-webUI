@@ -30,6 +30,13 @@
   `pptx_storage_dir`, `pptx_public_base_url`. Row 14 moved from
   `Deferred (wow candidate)` to `Implemented (WOW-3)` in
   `FEATURE_MATRIX.md`.
+- **Row 6 DOCX/XLSX/PPTX support via markitdown**: new
+  `apps/orchestrator/gpthub_orchestrator/ingest/richdoc.py` — detection
+  by MIME + extension for `.docx/.xlsx/.pptx/.doc/.xls/.ppt/.rtf/.epub`,
+  conversion via Microsoft `markitdown` library to markdown text, wired
+  into `ingest/pipeline.py` between PDF and plain-text routing. 21
+  tests in `tests/test_ingest_richdoc.py` (detection, real DOCX/XLSX/PPTX
+  round-trip, garbage fallback, empty rejection, pipeline routing).
 - **Row 7 Tavily web search**: env vars already in `.env` and
   `.env.example` (`ENABLE_WEB_SEARCH=true`, `WEB_SEARCH_ENGINE=tavily`,
   `TAVILY_API_KEY`); confirmed loaded in running WebUI container.
@@ -39,6 +46,11 @@
 
 ### Fixed
 
+- **Web search (Tavily) caused ContextWindowExceededError:** Open WebUI
+  injected full Tavily results into the chat messages, which combined
+  with existing chat history exceeded the 131K token limit of MWS models.
+  Added `WEB_SEARCH_RESULT_COUNT=2` and `TAVILY_EXTRACT_DEPTH=basic` to
+  `.env.example` and `.env` to limit result volume.
 - **PDF / file upload via Open WebUI crashed with `'NoneType' object has
   no attribute 'encode'`:** Open WebUI v0.8.12 ran its own RAG/embedding
   pipeline on uploaded files (`chat_completion_files_handler` →
@@ -187,7 +199,7 @@
 
 ### Validation
 
-- 63 → 234 tests passing (+171 new tests covering URL parsing, plain-text
+- 63 → 255 tests passing (+171 new tests covering URL parsing, plain-text
   ingest, ASR settings fallback, image generation intent and response
   shape, memory command parser, SQLite store CRUD + cosine search,
   MWS embeddings client, the end-to-end memory command executor with
