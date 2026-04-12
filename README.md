@@ -13,6 +13,7 @@ The repo is intentionally frozen around feature rows `1-12` and `P0` only. Every
 - `infra/docker-compose.yml`: self-contained stack wiring for WebUI, orchestrator, LiteLLM, and optional RAG support.
 - `infra/litellm/config.yaml`: vendored LiteLLM alias config, rewritten for an MWS-first baseline.
 - Canon docs that explain the architecture, frozen roadmap, and current feature baseline without legacy branch sprawl.
+- **`docs/MODEL_ROUTING_POLICY.md`**: единая формулировка политики выбора модели (исходный alpha-first baseline и текущий реестр ролей `version: 2`).
 
 ## Quick Start
 
@@ -38,6 +39,13 @@ uv sync --extra dev
 uv run pytest -q
 ```
 
+**PPTX plan model benchmark** (live LiteLLM + MWS; compare `gpt-hub-strong` vs optional instruct aliases):
+
+```bash
+docker compose -f infra/docker-compose.yml up -d --build   # pick up infra/litellm/config.yaml
+cd apps/orchestrator && uv sync --extra dev && uv run python ../../scripts/bench_pptx_plan_models.py --repeat 3
+```
+
 Open WebUI will be on `http://localhost:3000`, LiteLLM on `http://localhost:4000`, and the orchestrator health endpoint on `http://localhost:8089/healthz`.
 
 ## Demo Lock
@@ -56,7 +64,7 @@ Optional `rag` support is infrastructure for Open WebUI, not a second flagship p
 
 ## Current State
 
-This repo contains a runnable product spine with **255 passing unit +
+This repo contains a runnable product spine with **261 passing unit +
 integration tests**. What's live in code right now:
 
 - text chat through the orchestrator facade (row 1)
@@ -82,15 +90,17 @@ integration tests**. What's live in code right now:
 - `X-GPTHub-Trace` with full routing / fallback / ingest observability (row 15)
 - optional embedding normalization for RAG mode (infra only)
 
-- **WOW-3 PPTX generation (row 14)** — «сделай презентацию / /pptx» →
-  `pptx_gen.py`: JSON slide plan via `gpt-hub-strong` (retry on parse
-  failure) → `python-pptx` deck build → download link via
-  `GET /v1/files/pptx/{token}`. 52 unit tests (`test_pptx_gen.py`).
+- **WOW-3 PPTX generation (row 14)** — «сделай презентацию / /pptx /
+  в формате pptx» → `pptx_gen.py`: JSON slide plan via `gpt-hub-strong`
+  with `<think>` CoT stripping (retry on parse failure) → `python-pptx`
+  deck build → download link via `GET /v1/files/pptx/{token}`.
+  57 unit tests (`test_pptx_gen.py`). **Live PASS 2026-04-12** —
+  7-slide deck, 35 KB, download OK.
 - web search through Open WebUI Tavily integration (row 7, UI-managed)
 
 Still open inside the P0 scope:
 
-- operator-level live verification for rows 2, 4, 5, 6, 11 (Step 6);
+- operator-level live verification for rows 2, 4, 5, 11 (Step 6);
 - demo video, final submission artifacts, `demo-ready` tag.
 
 All gaps and phases are tracked in `ROADMAP.md` (section 0) and

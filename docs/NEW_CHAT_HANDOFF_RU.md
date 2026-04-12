@@ -56,7 +56,7 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 | 11 | Ручной выбор модели | Implemented (нужен демо-режим с dropdown) |
 | 12 | Markdown / код | **Implemented** |
 
-**234 unit/integration теста проходят** (`apps/orchestrator`, `uv run pytest -q`).
+**261 unit/integration тестов проходят** (`apps/orchestrator`, `uv run pytest -q`).
 
 ### 3.2. Доп. ряды 13–15 (wow + trace)
 
@@ -73,8 +73,8 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 - **Row 14 PPTX generation (WOW-3)** — **Implemented** ✅. `pptx_gen.py`:
   intent detection (RU/EN + `/pptx`/`/slides`), JSON slide plan via
   `gpt-hub-strong` (retry on parse failure), `python-pptx` deck builder,
-  download endpoint `GET /v1/files/pptx/{token}`. 52 unit-тестов в
-  `test_pptx_gen.py`.
+  download endpoint `GET /v1/files/pptx/{token}`. **57** unit-тестов в
+  `test_pptx_gen.py` (в т.ч. CoT-strip + trailing JSON + RU intent-паттерны).
 - **Row 15 X-GPTHub-Trace** — **Implemented** ✅. Подсвечиваем на защите.
 
 ### 3.3. Готовность к сдаче
@@ -84,10 +84,10 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
   embeddings (`qwen3-embedding-8b`, dim 4096).
 - `[x]` `FEATURE_MATRIX.md` синхронизирован (Row 13 = WOW-1, Row 14 = WOW-3).
 - `[x]` v3-стек остановлен; prod compose поднят, все три сервиса `Healthy`.
-- `[x]` `scripts/demo.sh` (без `--skip-wow`) — **PASS=12 FAIL=0 WARN=1**
-  (WARN was Row 14 PPTX before implementation; теперь код есть).
-- `[x]` `docs/LIVE_SMOKE.md` ведётся: текущие записи — 2026-04-11 11:46
-  (полный `demo.sh`) + 2026-04-12 (PDF upload regression fix).
+- `[x]` `scripts/demo.sh` (без `--skip-wow`) — **PASS=12 FAIL=0**; **WARN**
+  только если эвристики шагов 8–9 не находят council/PPTX в теле ответа
+  (перезапустить после деплоя WOW-3; журнал WARN=1 из‑за PPTX **устарел**).
+- `[x]` `docs/LIVE_SMOKE.md` ведётся: 2026-04-11 `demo.sh` + 2026-04-12 PDF/PPTX/E2E.
 - `[x]` `docs/submission/` — `architecture.mmd`,
   `gpthub-architecture.excalidraw`, `SLIDES_SKELETON.md`,
   `GPTHub_features_matrix.xlsx` (перегенерирован с Row 13 + 14).
@@ -105,10 +105,11 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 3. `ROADMAP.md` (содержит рабочий трекер в разделе 0)
 4. `FEATURE_MATRIX.md`
 5. `docs/MWS_CATALOG.md` (живой snapshot моделей MWS)
-6. `docs/PROMPT_PRECEDENCE.md`
-7. `docs/WEBUI_PAYLOAD.md`
-8. `docs/TEAM_BRIEF_RU.md`
-9. `CHANGELOG.md`
+6. `docs/MODEL_ROUTING_POLICY.md` (**политика маршрутизации**: baseline vs реестр ролей `version: 2`, роли → алиасы)
+7. `docs/PROMPT_PRECEDENCE.md`
+8. `docs/WEBUI_PAYLOAD.md`
+9. `docs/TEAM_BRIEF_RU.md`
+10. `CHANGELOG.md`
 
 Если какой-то новый документ начнёт противоречить этим файлам — править
 нужно канон, а не плодить вторую правду.
@@ -117,7 +118,7 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 
 ### 5.1. Spine
 
-- `apps/orchestrator/` — FastAPI runtime, **234** unit/integration тестов;
+- `apps/orchestrator/` — FastAPI runtime, **261** unit/integration тестов;
 - `apps/embedding_shim/` — optional RAG-профиль (в prod compose **не** используется);
 - `infra/docker-compose.yml` — единый запуск; `.env.mws.local` прокидывается
   **и в orchestrator** (раньше только в litellm);
@@ -156,9 +157,10 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
   `council_synthesis_timeout_seconds`, `council_expert_*`,
   `council_synthesis_model`, `council_min_branches_for_synthesis`).
 - **`pptx_gen.py` (Row 14 WOW-3)** — PPTX_GENERATION intent + JSON slide
-  plan request to `gpt-hub-strong` (retry on parse failure) + `python-pptx`
-  deck builder + file storage + download endpoint
-  `GET /v1/files/pptx/{token}`. 52 unit-тестов в `test_pptx_gen.py`.
+  plan request to `gpt-hub-strong` (with `<think>` CoT stripping + retry
+  on parse failure) + `python-pptx` deck builder + file storage + download
+  endpoint `GET /v1/files/pptx/{token}`. 57 unit-тестов в `test_pptx_gen.py`.
+  **Live PASS 2026-04-12.**
 - `main.py` — lifespan поднимает `MemoryStore`; pipeline short-circuits
   в строгом порядке: memory-command → council → **pptx-gen** → image-gen →
   greeting → normal chat. На normal chat top-K фактов памяти
@@ -176,13 +178,13 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 Полная раскладка — `ROADMAP.md` раздел 0.4 (victory plan) и 0.5 (kill switches).
 
 - ✅ **Шаг 1 — Live docker smoke** — закрыт, tag `smoke-green`.
-- ✅ **Шаг 2 — Полный P0 smoke** — `demo.sh` PASS=12 FAIL=0 WARN=1.
+- ✅ **Шаг 2 — Полный P0 smoke** — `demo.sh` **PASS=12 FAIL=0** (WARN см. вывод скрипта).
 - 🟡 **Шаг 3 — Submission артефакты** — черновики + xlsx пересобран.
   Финализация — после Step 6.
 - ✅ **Шаг 4 — Row 7 Tavily toggle** — env vars in `.env`, confirmed.
 - ✅ **Шаг 5 — WOW-1 Expert Council** — closed in `main` (`9393d30`).
 - 🔜 **Шаг 6 — Operator-сценарии + репетиция** (1 ч, оператор в WebUI).
-- ✅ **Шаг 7 — WOW-3 PPTX** — `pptx_gen.py` + 52 теста, **234** total.
+- ✅ **Шаг 7 — WOW-3 PPTX** — `pptx_gen.py` + 57 тестов в `test_pptx_gen.py`, **261** total. **Live PASS 2026-04-12.**
 - 🔜 **Шаг 8 — Запись demo-видео** (1 ч, 2–3 дубля).
 - 🔜 **Шаг 9 — Финальная сверка + git tag `demo-ready`**.
 
@@ -195,11 +197,11 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 
 1. ✅ подтверждённый MWS baseline (контракты проверены);
 2. ✅ **все 12 обязательных рядов закрыты** (Row 7 — env-флаг, дёшево);
-3. ✅ **живой docker smoke** (`demo.sh` без `--skip-wow` — PASS=12 FAIL=0 WARN=1);
+3. ✅ **живой docker smoke** (`demo.sh` без `--skip-wow` — **PASS=12 FAIL=0**);
 4. 🟡 `docs/LIVE_SMOKE.md` ведётся; для победного чек-листа желательно
    ≥ 12 зафиксированных прогонов (сейчас 4–5, накопим в Step 6);
 5. 🔜 один цельный демо-сценарий на 2–3 минуты (Step 6 репетиция → Step 8 запись);
-6. ✅ wow-1: Expert Council. 🔜 wow-3: (условно) PPTX;
+6. ✅ wow-1: Expert Council. ✅ wow-3: PPTX в `main`, live 2026-04-12;
 7. ✅ `X-GPTHub-Trace` как «production-grade» аргумент защиты;
 8. 🔜 упаковка в demo-video + feature matrix + architecture + presentation;
 9. 🔜 git tag `demo-ready` — точка заморозки.
@@ -209,9 +211,8 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 
 ## 8. Активные рабочие треки
 
-- **Трек A (code):** ✅ WOW-1 Council влит в `main` (`9393d30`) → 🔜
-  Step 4 row 7 Tavily toggle → 🔜 (условно) Step 7 WOW-3 PPTX в ветке
-  `wow/pptx`. Правило: wow-ветки в `main` только после зелёного прогона.
+- **Трек A (code):** ✅ WOW-1 Council + ✅ WOW-3 PPTX в `main`. Step 4 Tavily — env.
+  Правило: wow в `main` только после зелёного прогона.
 - **Трек B (infra/smoke):** ✅ Step 1 docker smoke → ✅ Step 2 полный P0
   через `demo.sh` → 🔜 Step 6 репетиция (требует оператора в WebUI) →
   🔜 Step 8 запись видео.
@@ -254,7 +255,7 @@ docker compose -f infra/docker-compose.yml up -d --build
 # 3. Тесты orchestrator
 cd apps/orchestrator
 uv sync --extra dev
-uv run pytest -q     # ожидается 182 passed
+uv run pytest -q     # ожидается 261 passed
 ```
 
 Open WebUI: `http://localhost:3000` · LiteLLM: `http://localhost:4000` ·
@@ -265,7 +266,7 @@ Orchestrator health: `http://localhost:8089/healthz`.
 1. прочитать канон из раздела 4 (начать с `README.md` → `ROADMAP.md`
    раздел 0.4 → раздел 0.5 → раздел 0.6);
 2. свериться с `docs/LIVE_SMOKE.md` — что уже прогнано вживую;
-3. прогнать `uv run pytest -q` в `apps/orchestrator/` (ожидается 182 passed);
+3. прогнать `uv run pytest -q` в `apps/orchestrator/` (ожидается 261 passed);
 4. только потом брать в работу следующий приоритет — **шаг из victory
    plan (раздел 0.4), а не «что захочу»**;
 5. при любой обрезке wow-компонента — сразу обновлять соответствующий

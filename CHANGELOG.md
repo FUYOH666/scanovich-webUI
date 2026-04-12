@@ -2,12 +2,54 @@
 
 ## [Unreleased]
 
+### Added
+
+- **PPTX plan model benchmark:** LiteLLM aliases `gpt-hub-pptx-llama33` →
+  `llama-3.3-70b-instruct` and `gpt-hub-pptx-qwen235a22` →
+  `Qwen3-235B-A22B-Instruct-2507-FP8` in [`infra/litellm/config.yaml`](infra/litellm/config.yaml);
+  script [`scripts/bench_pptx_plan_models.py`](scripts/bench_pptx_plan_models.py) runs the same
+  `request_slide_plan` + `build_pptx_from_plan` path as production, reports median
+  plan/build seconds per alias. Optional prod switch: `PPTX_PLAN_MODEL` env
+  (default remains `gpt-hub-strong`).
+- **Unit:** `tests/test_litellm_pptx_bench_aliases.py` asserts new YAML entries exist.
+
 ### Changed
 
+- **Router / `model_roles.yaml`:** `doc_synthesis` now starts with **`gpt-hub-doc`**
+  (qwen2.5-72b-instruct); `reasoning_code_local` / `reasoning_code_openrouter` start
+  with **`gpt-hub-reasoning-or`** (qwen3-coder-480b), each with **`gpt-hub-turbo`**
+  as second-step fallback before `gpt-hub-fallback`. Aligns classifier roles with
+  MWS capabilities for submission demos (was alpha-first for all non-vision roles).
+- **Docs:** новый канон [`docs/MODEL_ROUTING_POLICY.md`](docs/MODEL_ROUTING_POLICY.md)
+  — исходная alpha-first политика baseline и текущая политика реестра ролей
+  `model_roles.yaml` version 2; ссылки из `README.md`, `NEW_CHAT_HANDOFF_RU.md`,
+  `TEAM_BRIEF_RU.md`, `ROADMAP.md`.
+- **PPTX JSON parsing:** tolerate instruct models that append prose after a valid
+  top-level JSON object (`json.JSONDecoder().raw_decode`) — improves compatibility
+  when benchmarking or routing PPTX through chatty instruct checkpoints.
 - **Docs:** full sync all canon docs (ROADMAP, README, TEAM_BRIEF_RU,
   NEW_CHAT_HANDOFF_RU, FEATURE_MATRIX) with WOW-1 Council + WOW-3 PPTX
-  state, **234** tests, victory-plan step statuses (Steps 1–5 closed,
-  4/6/7 planned). Regenerated `docs/submission/GPTHub_features_matrix.xlsx`.
+  state, **261** tests, victory-plan step statuses (Steps 1–5, 7 closed,
+  6/8/9 planned). Regenerated `docs/submission/GPTHub_features_matrix.xlsx`.
+- **Docs drift fix:** Row 9 memory test count (было ошибочно «52») → ~30 в
+  `test_memory_*.py`; убраны устаревшие **WARN=1** из‑за PPTX в `demo.sh`;
+  `LIVE_SMOKE.md` — follow-up про флаппи **ReadTimeout** на MWS embeddings;
+  `.env.example` — комментарий `MEMORY_EMBEDDING_TIMEOUT_SECONDS`.
+- **Verification (2026-04-11):** `uv run pytest` → 261 passed, 2 skipped;
+  `docker compose … up -d --build` + full `scripts/demo.sh` → **PASS=13**
+  FAIL=0 WARN=0; запись в `docs/LIVE_SMOKE.md` (пояснение PASS=13 vs
+  устаревшие PASS=12 в старых журналах).
+
+### Fixed
+
+- **PPTX plan JSON parse failures (MWS `<think>` CoT):** `gpt-hub-strong`
+  (glm-4.6-357b) wraps output in `<think>...</think>` Chinese CoT blocks
+  before the actual JSON. Added `_strip_cot_blocks()` to `pptx_gen.py`
+  that removes `<think>` tags before JSON parsing. First live PPTX
+  generation confirmed 2026-04-12: 7-slide deck, 35 KB, download OK.
+- **PPTX intent patterns broadened:** added «в формате pptx», «формат pptx»
+  patterns so natural-language phrases like «давай, в формате pptx будет?»
+  now trigger the PPTX short-circuit. 52 → 56 unit tests.
 
 ### Added
 
@@ -199,7 +241,7 @@
 
 ### Validation
 
-- 63 → 255 tests passing (+171 new tests covering URL parsing, plain-text
+- 63 → 259 tests passing (+171 new tests covering URL parsing, plain-text
   ingest, ASR settings fallback, image generation intent and response
   shape, memory command parser, SQLite store CRUD + cosine search,
   MWS embeddings client, the end-to-end memory command executor with

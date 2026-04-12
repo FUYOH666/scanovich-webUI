@@ -61,6 +61,9 @@ _PPTX_PHRASES = [
     re.compile(r"\bпрезентац\w*\b[^.?!\n]{0,30}\b(?:по|про|о|об|на\s+тему)\b", re.IGNORECASE | re.UNICODE),
     re.compile(r"\bслайд\w*\s+(?:по|про|о|об|на\s+тему)\b", re.IGNORECASE | re.UNICODE),
     re.compile(r"\bколод\w*\s+слайд\w*\b", re.IGNORECASE | re.UNICODE),
+    # RU "в формате pptx" / "формат pptx" / "в pptx".
+    re.compile(r"\bв\s+(?:формате?\s+)?pptx\b", re.IGNORECASE | re.UNICODE),
+    re.compile(r"\bформат\w*\s+pptx\b", re.IGNORECASE | re.UNICODE),
     # EN.
     re.compile(
         r"\b(?:make|build|create|generate|draft|prepare)\s+"
@@ -205,25 +208,49 @@ def _strip_code_fence(text: str) -> str:
     return s.strip()
 
 
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_cot_blocks(text: str) -> str:
+    """Remove <think>…</think> CoT blocks that MWS reasoning models inject."""
+    return _THINK_BLOCK_RE.sub("", text).strip()
+
+
 def _try_parse_plan_json(text: str) -> Any:
     """Parse raw assistant content into a Python object.
 
-    Tolerates ``` fences and a single trailing comma; raises
-    PptxPlanError on hard failure.
+    Tolerates ``` fences, <think> CoT blocks, and <json> wrappers;
+    raises PptxPlanError on hard failure.
     """
-    s = _strip_code_fence(text)
+    # Strip CoT blocks first — MWS glm-4.6 wraps output in <think>…</think>.
+    s = _strip_cot_blocks(text)
+    s = _strip_code_fence(s)
     # Some models still wrap JSON in <json> ... </json> tags.
     s = re.sub(r"^<json>\s*", "", s, flags=re.IGNORECASE)
     s = re.sub(r"\s*</json>$", "", s, flags=re.IGNORECASE)
     try:
         return json.loads(s)
     except json.JSONDecodeError:
-        # Last-resort: extract the largest {...} block.
-        first = s.find("{")
-        last = s.rfind("}")
+        # Some instruct models append prose after valid JSON ("Extra data" in json.loads).
+        s2 = s.strip()
+        try:
+            obj, _end = json.JSONDecoder().raw_decode(s2)
+            if isinstance(obj, dict):
+                return obj
+        except (json.JSONDecodeError, ValueError, TypeError):
+            pass
+        first = s2.find("{")
+        if first > 0:
+            try:
+                obj, _end = json.JSONDecoder().raw_decode(s2[first:])
+                if isinstance(obj, dict):
+                    return obj
+            except (json.JSONDecodeError, ValueError, TypeError):
+                pass
+        last = s2.rfind("}")
         if first != -1 and last > first:
             try:
-                return json.loads(s[first : last + 1])
+                return json.loads(s2[first : last + 1])
             except json.JSONDecodeError as e2:
                 raise PptxPlanError(f"json_parse_error: {e2}") from e2
         raise PptxPlanError("json_no_object")
