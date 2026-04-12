@@ -56,7 +56,7 @@
 - **Input:** `./scripts/demo.sh` (no `--skip-wow`). Steps 1–7 hit the P0 baseline; step 8 sends `/research ... корпоративные RAG` via curl; step 9 sends the PPTX prompt.
 - **Model(s) used:** Row 1 → `gpt-hub-turbo`; Row 8 URL → alpha; Row 3 image → `qwen-image`; Row 9 memory → `qwen3-embedding-8b` + alpha; Row 10 classifier → alpha; Step 8 council → 3 experts + `gpt-hub-strong` synthesis.
 - **Latency:** full run dominated by council (~171 s). Total end-to-end ≈ 3.5 min.
-- **Result:** **PASS=12 FAIL=0 WARN=1**. The sole WARN is expected: WOW-3 PPTX (row 14, not yet implemented — `demo.sh` just sees a plain chat reply instead of a `.pptx` artifact).
+- **Result:** **PASS=12 FAIL=0 WARN=1**. Исторический WARN относится к прогону **до** финального PPTX short-circuit: шаг 9 `demo.sh` не проверял markdown + **`GET /artifacts/pptx/…`**. Текущий код — `gpthub_orchestrator/pptx/` (см. `FEATURE_MATRIX.md` row 14); для закрытия ряда в матрице нужен отдельный live-прогон с кликом по ссылке скачивания.
 - **Trace highlights:** `X-GPTHub-Trace` present on every row; council path returned a valid OpenAI-compatible `chat.completion` with the synthesized answer (curl path in step 8 is unbounded and waits out the full 171 s).
 - **Notes:** Confirms the council code in the live container works inside the automated smoke, not just the manual `POST /v1/chat/completions` from 11:32. `wow/expert-council` is green end-to-end through docker; the only remaining WARN is a known-unmerged wow-candidate. Clears the ROADMAP §0.4 rule «merge `wow/expert-council` only after green end-to-end through WebUI».
 
@@ -156,6 +156,19 @@
 - **Result:** **OK** по генерации и скачиванию после разбора 404; отдельно зафиксирован диагностический **FAIL-паттерн** «ссылка на `.pptx` сразу даёт 404» до фикса ingest.
 - **Trace highlights:** `pptx_timing` с **`concurrency: 7`**, 9 слайдов; `pptx: {"status": "ok", "slides": 9}`; при сбое артефакта в логах orchestrator: `httpx GET` на тот же URL артефакта → **200** и `url_ingest_failed … unsupported content-type: application/vnd.openxmlformats-officedocument.presentationml.presentation`, затем клиентский `GET` → `pptx_artifact_miss` / **404**.
 - **Notes:** 404 был не из‑за Security Group: ответ шёл от `uvicorn`. Одноразовый токен снимал **ingest URL** из текста (ответ ассистента с ссылкой «Скачать»). Исправление в репозитории: не добавлять в инжест URL с путём `/artifacts/pptx/` (`ingest/url_fetch.py`). Успешное скачивание на том же стенде: `GET /artifacts/pptx/...` **200** с внешнего клиента для нового `artifact_id`.
+
+## 2026-04-11 13:50 — PPTX «природа», smoke ~40 с (разбор таймингов)
+
+> Ориентир по времени: **13:50** МСК; в логах оркестратора тот же прогон — **10:54:40** UTC → **10:55:23** UTC (`execution_trace` с `"slides": 9`). Детализация фаз — в `out.txt` (корень рабочей копии).
+
+- **Stack commit:** _—_ (сверить `git rev-parse --short HEAD`)
+- **Env:** тот же стек, что и соседние PPTX-записи (WebUI + orchestrator, `pptx_parallel_slide_agents_enabled`).
+- **Input:** текстовый запрос на презентацию по теме **«природа»**, **9 слайдов** в плане (parallel slide-agents).
+- **Model(s) used:** по trace — `task_type: pptx`, цепочка strong / slide-plan (как в других PPTX smoke).
+- **Latency:** `plan_outline_llm_ms` **~3169** ms; **стена slide-agents** `plan_slide_agents_ms` **~39 592** ms (**~39,6 с**); `plan_total_ms` **~42 763** ms (**~42,8 с**); `build_deck_ms` **~254** ms. Узкое место — **один** самый долгий per-slide LLM (**~39 592** ms), почти равный wall параллельного блока.
+- **Result:** **OK** по end-to-end генерации; субъективно «~40 с» на план совпадает с доминированием блока slide-agents.
+- **Trace highlights:** 9× `pptx_slide_agent_done`; max на слайде с заголовком в духе «Экосистемы и их разнообразие» (~**39,6 с**), остальные короче.
+- **Notes:** **Титульный / вводный слайд в деке есть** — проблема качества/скорости не в отсутствии титульника и не в `python-pptx` (**~0,25 с** на сборку), а в **overhead на тексте слайдов**: параллельные агенты упираются в **самый медленный** вызов LLM на одном слайде. Для сравнения второй крупный прогон в том же логе («океан», 10 слайдов) — wall slide-agents **~17,5 с**, `plan_total_ms` **~21,2 с** (`out.txt`).
 
 ---
 

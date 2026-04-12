@@ -56,15 +56,17 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 | 11 | Ручной выбор модели | Implemented (нужен демо-режим с dropdown) |
 | 12 | Markdown / код | Implemented |
 
-**182 unit/integration теста проходят** (`apps/orchestrator`).
+**226 unit/integration тестов проходят** (`apps/orchestrator`, `uv run pytest -q`).
 
 ### 3.2. Доп. ряды 13–15 (wow + trace)
 
 - Row 13 **Expert Council** (WOW-1): **Implemented** в `main` (`9393d30`) —
   `council.py`, fan-out + synthesis, журнал `docs/LIVE_SMOKE.md` 2026-04-11
   (ручной council + полный `demo.sh` без `--skip-wow`).
-- Row 14 **PPTX generation** (wow-3): `python-pptx` + классификатор на
-  триггеры «сделай презентацию».
+- Row 14 **PPTX** (WOW-3): **Implemented** — пакет `gpthub_orchestrator/pptx/`,
+  `task_type=pptx`, router `pptx_slide_plan_json`, план (parallel slide agents
+  или монолит + retry), `python-pptx`, ответ с markdown + **`GET /artifacts/pptx/{id}?token=…`**.
+  **36** тестов (`test_pptx_module.py`, `test_classifier_pptx.py`, `test_main_pptx_short_circuit.py`).
 - Row 15 **X-GPTHub-Trace** уже есть — подсвечиваем на защите.
 
 ### 3.3. Готовность к сдаче
@@ -100,7 +102,7 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 
 ### 5.1. Spine
 
-- `apps/orchestrator/` — FastAPI runtime, 101 unit/integration тест;
+- `apps/orchestrator/` — FastAPI runtime, **226** unit/integration тестов;
 - `apps/embedding_shim/` — optional RAG-профиль;
 - `infra/docker-compose.yml` — единый запуск; `.env.mws.local` теперь
   прокидывается **и в orchestrator** (раньше только в litellm);
@@ -131,15 +133,16 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 - `settings.py` — новые поля `mws_gpt_api_*`, `ingest_url_*`, `image_gen_*`,
   `memory_*` (включая `memory_db_path`, `memory_embedding_model`,
   `memory_retrieval_top_k`, `memory_retrieval_min_score`).
-- `main.py` — lifespan поднимает `MemoryStore`; добавлены два новых
-  вмешательства в pipeline: (1) memory-command short-circuit сразу после
-  ingest и до image-gen, (2) retrieval-injection top-K фактов как
-  system-блок перед применением role prompt.
+- `main.py` — lifespan поднимает `MemoryStore`; short-circuit порядок после
+  classify: memory-command → council → **image-gen** → **pptx** (`pptx_gen_enabled`,
+  `task_type=pptx`) → greeting → обычный chat; перед role prompt — retrieval-injection
+  top-K фактов памяти.
+- **`gpthub_orchestrator/pptx/`** (row 14 WOW-3): план слайдов, сборка дека,
+  `PptxArtifactStore`, URL **`/artifacts/pptx/…`**, см. `settings.pptx_*`.
 
-### 5.3. Что ещё не написано
+### 5.3. Что ещё не написано / мелочи
 
-- PPTX (row 14, wow-3): `python-pptx` dep + slide plan generator.
-- Web search env-тумблер (row 7).
+- Web search env-тумблер (row 7) — в Open WebUI.
 - Демо-режим «все алиасы в dropdown» для row 11.
 
 ## 6. Текущий приоритет работ
@@ -160,8 +163,8 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 5. **Шаг 5 — WOW-1 Expert Council** — **готово** в `main` (`9393d30`).
 6. **Шаг 6 — Репетиция демо-сценария** (box: 1 ч). Реальный прогон,
    не запись.
-7. **Шаг 7 — WOW-3 PPTX** (box: 4 ч, **условный** — только если осталось
-   время до дедлайна). Иначе выбрасываем без сожалений.
+7. **Шаг 7 — WOW-3 PPTX** — **готово** в `main` (пакет `pptx/`); kill switch:
+ `pptx_gen_enabled=false`.
 8. **Шаг 8 — Запись demo-видео** (box: 1 ч, 2–3 дубля).
 9. **Шаг 9 — Финальная сверка + git tag `demo-ready`**.
 
@@ -177,7 +180,7 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 3. **живой docker smoke** (пока не сделан — приоритет #1);
 4. `docs/LIVE_SMOKE.md` с ≥ 12 зафиксированных прогонов (журнал наблюдений);
 5. один цельный демо-сценарий на 2–3 минуты (сначала репетиция, потом запись);
-6. wow-дифференциация: mixed input + (условно) Expert Council + (условно) PPTX;
+6. wow-дифференциация: mixed input + Expert Council + PPTX (код в `main`);
 7. `X-GPTHub-Trace` как «production-grade» аргумент защиты;
 8. упаковка в demo-video + feature matrix + architecture + presentation;
 9. git tag `demo-ready` — точка заморозки.
@@ -187,9 +190,8 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 
 ## 8. Активные рабочие треки
 
-- **Трек A (code):** WOW-1 Council **влит в `main`** (`9393d30`) → row 7
-  Tavily toggle → (условно) WOW-3 PPTX в ветке `wow/pptx`.
-  Правило: следующие wow-ветки в `main` только после зелёного прогона.
+- **Трек A (code):** WOW-1 Council + WOW-3 PPTX **в `main`** → row 7 Tavily (env WebUI).
+  Правило: новые wow-ветки в `main` только после зелёного прогона.
 - **Трек B (infra/smoke):** шаг 1 docker smoke → шаг 2 полный P0 →
   шаг 6 репетиция → шаг 8 запись видео.
 - **Трек C (submission):** шаг 3 артефакты (xlsx + диаграмма + скелет
@@ -209,7 +211,7 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 
 - `Open WebUI` — UX;
 - `orchestrator` — product intelligence (classifier, router, ingest,
-  image-gen short-circuit, memory, council fan-out);
+  image-gen + pptx short-circuits, memory, council fan-out);
 - `LiteLLM` — gateway/alias/fallback chain;
 - `MWS` — upstream моделей.
 
@@ -231,7 +233,7 @@ docker compose -f infra/docker-compose.yml up -d --build
 # 3. Тесты orchestrator
 cd apps/orchestrator
 uv sync --extra dev
-uv run pytest -q     # ожидается 182 passed
+uv run pytest -q     # ожидается 226 passed
 ```
 
 Open WebUI: `http://localhost:3000` · LiteLLM: `http://localhost:4000` ·
@@ -242,7 +244,7 @@ Orchestrator health: `http://localhost:8089/healthz`.
 1. прочитать канон из раздела 4 (начать с `README.md` → `ROADMAP.md`
    раздел 0.4 → раздел 0.5 → раздел 0.6);
 2. свериться с `docs/LIVE_SMOKE.md` — что уже прогнано вживую;
-3. прогнать `uv run pytest -q` в `apps/orchestrator/` (ожидается 182 passed);
+3. прогнать `uv run pytest -q` в `apps/orchestrator/` (ожидается 226 passed);
 4. только потом брать в работу следующий приоритет — **шаг из victory
    plan (раздел 0.4), а не «что захочу»**;
 5. при любой обрезке wow-компонента — сразу обновлять соответствующий

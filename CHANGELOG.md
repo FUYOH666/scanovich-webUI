@@ -4,10 +4,13 @@
 
 ### Changed
 
-- **Docs:** `ROADMAP.md` (§0.2 row 13, §0.4 шаг 1/5, §0.6 differentiation,
-  трек A), `README.md` (WOW-1 merge note), `docs/TEAM_BRIEF_RU.md`, and
-  `docs/NEW_CHAT_HANDOFF_RU.md` — синхронизированы с WOW-1 Expert Council
-  в `main` (`9393d30`) и базовым счётчиком **182** тестов.
+- **Docs (PPTX / test count):** `FEATURE_MATRIX.md` row 14 → **Implemented (WOW-3)**
+  для пакета `gpthub_orchestrator/pptx/`, выдачи **`GET /artifacts/pptx/{id}?token=…`**,
+  порядка short-circuit (memory → council → image-gen → pptx) и **36** pptx-тестов;
+  `README.md`, `ROADMAP.md` (§0.2 row 14, §0.3 scope, шаг 7, §0.6, Demo Lock, трек A),
+  `docs/TEAM_BRIEF_RU.md`, `docs/NEW_CHAT_HANDOFF_RU.md`, `docs/LIVE_SMOKE.md`
+  (устаревшие формулировки data-URI / «PPTX не реализован») — приведены к текущему коду.
+  Базовый счётчик orchestrator: **226** тестов (`uv run pytest`).
   Пересобран `docs/submission/GPTHub_features_matrix.xlsx` из матрицы.
 
 ### Added
@@ -164,7 +167,7 @@
 ### Not yet done (tracked in ROADMAP section 0)
 
 - Row 7: enable Open WebUI Tavily web search via env.
-- Row 14 wow: PPTX generation via `python-pptx`.
+- Operator live checklist (WebUI voice, uploads, Tavily, manual model row11, PPTX link) — журнал `docs/LIVE_SMOKE.md`.
 - Live E2E smoke through the docker stack (blocked on stopping the old
   `gpthub-v3-*` stack that holds ports 3000/4000/8089).
 - Architecture diagram PNG/SVG.

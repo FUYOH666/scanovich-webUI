@@ -56,8 +56,8 @@ Optional `rag` support is infrastructure for Open WebUI, not a second flagship p
 
 ## Current State
 
-This repo contains a runnable product spine with **182 passing unit +
-integration tests**. What's live in code right now:
+This repo contains a runnable product spine with **226 passing unit +
+integration tests** (`apps/orchestrator`, `uv run pytest`). What's live in code right now:
 
 - text chat through the orchestrator facade (row 1)
 - automatic + manual model choice via role-backed alias chain (rows 10, 11)
@@ -81,12 +81,15 @@ integration tests**. What's live in code right now:
 - voice chat through Open WebUI STT/TTS (row 2, UI-managed)
 - `X-GPTHub-Trace` with full routing / fallback / ingest observability (row 15)
 - optional embedding normalization for RAG mode (infra only)
+- **WOW-3 PPTX (row 14)** — `task_type=pptx` → `gpthub_orchestrator/pptx/`:
+  parallel or monolithic slide-plan LLM (via LiteLLM / strong chain),
+  `python-pptx` deck build, markdown preview + **`GET /artifacts/pptx/{id}?token=…`**
+  download. **36** focused tests; see `FEATURE_MATRIX.md` and `docs/LIVE_SMOKE.md`.
 
 Still open inside the P0 scope:
 
-- row 7 web search — needs `ENABLE_WEB_SEARCH=true` + `TAVILY_API_KEY` in env;
-- WOW-3 PPTX generation (row 14) — planned as a wow-feature inside
-  the "one chat flow" constraint.
+- row 7 web search — needs `ENABLE_WEB_SEARCH=true` + `TAVILY_API_KEY` in env (Open WebUI);
+- operator live pass for the full WebUI checklist (voice, uploads, Tavily, PPTX link) — journal in `docs/LIVE_SMOKE.md`.
 
 All gaps and phases are tracked in `ROADMAP.md` (section 0) and
 `FEATURE_MATRIX.md`. Live model snapshot is in `docs/MWS_CATALOG.md`.
