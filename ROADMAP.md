@@ -382,9 +382,10 @@ wow» и «сохранить baseline» — всегда сохраняем bas
 
 ### Трек A — Code (один человек)
 
-1. **Шаг 5 — Expert Council** — **готово** в `main` (`9393d30`).
-2. **Шаг 7 — PPTX** — **готово** в `main` (пакет `gpthub_orchestrator/pptx/`).
-3. **Шаг 4 — Tavily toggle** (env WebUI, в любой момент).
+1. ✅ **Шаг 5 — Expert Council** — в `main` (`9393d30`).
+2. ✅ **Шаг 4 — Tavily toggle** — env + compose; см. `.env.example`.
+3. ✅ **Шаг 7 — PPTX (WOW-3)** — в `main`: пакет `gpthub_orchestrator/pptx/`, markdown + **`GET /artifacts/pptx/{id}?token=…`**.
+   Дальше по коду — пост-конкурс §5; по продукту — **оператор** (шаги 6/8/9).
 
 ### Трек B — Infra / Smoke (один человек)
 
