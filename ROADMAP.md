@@ -413,9 +413,10 @@ wow» и «сохранить baseline» — всегда сохраняем bas
 
 ### Трек A — Code (один человек)
 
-1. ✅ **Шаг 5 — Expert Council** — закрыт в `main` (`9393d30`).
-2. 🔜 **Шаг 4 — Tavily toggle** (env-only, 30 минут).
-3. 🔜 **Шаг 7 — PPTX** (условный, ветка `wow/pptx`).
+1. ✅ **Шаг 5 — Expert Council** — в `main` (`9393d30`).
+2. ✅ **Шаг 4 — Tavily toggle** — env + compose; см. `.env.example` и коммит `ff9d574`.
+3. ✅ **Шаг 7 — PPTX (WOW-3)** — в `main` (`ff9d574`), `pptx_gen.py` + download link.
+   Дальше по коду — только пост-конкурс §5; по продукту — **оператор** (шаги 6/8/9).
 
 ### Трек B — Infra / Smoke (один человек)
 
