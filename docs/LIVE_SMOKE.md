@@ -49,6 +49,40 @@
 - **Trace highlights:** _n/a_
 - **Notes:** Services `gpthub-prod-litellm`, `gpthub-prod-orchestrator`, `gpthub-prod-open-webui` created; `docker compose ps` shows litellm/orchestrator healthy; WebUI container up on port 3000.
 
+## 2026-04-12 — Row 6 Files PDF upload regression (NoneType encode)
+
+- **Stack commit:** main @ pre-fix; reproduced on `gpthub-prod-open-webui` v0.8.12.
+- **Symptom:** uploading `Vkliuchaiem obaianiie po mietod ... .pdf` from
+  the Telegram Desktop downloads folder via the WebUI chat → top-right
+  red toast: `'NoneType' object has no attribute 'encode'`.
+- **Root cause (from `gpthub-prod-open-webui` logs):**
+  `chat_completion_files_handler` (`utils/middleware.py:1927`) →
+  `get_sources_from_items` (`retrieval/utils.py:1145`) →
+  `query_collection` (`retrieval/utils.py:455`) → lambda calls
+  `embedding_function.encode(...)` where `embedding_function` is
+  `None`. Open WebUI v0.8.12 was trying to run **its own** RAG /
+  embedding pipeline on the uploaded file, but no embedding engine
+  is wired in our compose (we deliberately don't run the
+  `embedding-shim` rag profile in the prod stack).
+- **Architectural decision:** orchestrator owns ingest. WebUI's job is
+  to extract text and forward it. Wiring a second embedding engine into
+  WebUI is the wrong fix — it duplicates the orchestrator's
+  `ingest/pipeline.py` and reintroduces the very split we removed when
+  we centralised ingest.
+- **Fix:** added `BYPASS_EMBEDDING_AND_RETRIEVAL=true` and explicit
+  empty `RAG_EMBEDDING_ENGINE=` to `.env.example` and `.env`. Confirmed
+  in v0.8.12 source (`/app/backend/open_webui/retrieval/utils.py:1028`)
+  that the bypass branch reads `file_object.data.get('content', '')`
+  directly and never calls the embedding function.
+- **Recovery:** `docker compose -f infra/docker-compose.yml up -d
+  --force-recreate open-webui` (compose recreated all three services
+  because they share the .env env_file). All three back to `Healthy`;
+  `curl http://localhost:3000/health` → 200.
+- **Status:** **Awaiting live retry by operator** — re-upload the same
+  PDF and either confirm the chat response or capture the new error.
+  Until that retry is recorded here, Row 6 Files remains formally
+  blocked from `Implemented` in `FEATURE_MATRIX.md`.
+
 ## 2026-04-11 11:46 — Step 5 full `demo.sh` (including WOW-1) end-to-end
 
 - **Stack commit:** `wow/expert-council` @ `9ff08ce` (council feature commit).
@@ -243,18 +277,66 @@
 
 ## Шаг 6 — Репетиция демо-сценария
 
-### [pending] Полный прогон Demo Lock
+### [pending] Operator checklist (Шаг 6)
 
-- **Scenario steps:**
-  1. mixed input (PDF + фото + аудио + URL + текст)
-  2. «запомни моё предпочтение X»
-  3. «что ты обо мне помнишь?»
-  4. (опционально) «проведи deep research» → Expert Council
-  5. (опционально) «сделай презентацию» → PPTX
-  6. trace reveal в DevTools
-- **Time:** _—_ (цель: 2–3 минуты)
+> **Это список того, что нужно проверить руками в WebUI (localhost:3000)
+> перед записью видео.** Каждый пункт — отправить сообщение, проверить
+> результат, записать ниже дату/время и статус.
+
+#### A. Обязательные ряды — ручная проверка
+
+- [ ] **Row 2 — Voice**: нажать микрофон в WebUI, сказать фразу,
+  проверить что STT расшифровало и ответ пришёл. Записать результат.
+- [ ] **Row 4 — Audio file**: загрузить `.wav`/`.mp3` файл через скрепку,
+  проверить что ASR расшифровал и orchestrator ответил по содержимому.
+- [ ] **Row 5 — Image (VLM)**: загрузить фото (например, скриншот кода
+  или фото еды), спросить «что на картинке?». Проверить что VLM ответил.
+- [ ] **Row 6 — PDF post-fix**: загрузить PDF (тот же файл который
+  крашился раньше), проверить что ответ пришёл без ошибки.
+  Файл: `Vkliuchaiem obaianiie po mietod - Dzhiek Shafier.pdf`
+- [ ] **Row 7 — Web search**: спросить что-то актуальное, например
+  «какие новости сегодня?» или «what happened in AI this week?».
+  Если Tavily работает — в ответе будут ссылки на источники.
+- [ ] **Row 11 — Manual model choice**: поменять `ORCHESTRATOR_MODELS_CATALOG=all`
+  и `AUTO_ROUTE_MODEL=false` в `.env`, пересобрать orchestrator, проверить
+  что в dropdown WebUI видно несколько моделей (`gpt-hub-turbo`, `gpt-hub-strong` и т.д.).
+  **Вернуть обратно после проверки!**
+
+#### B. WOW features — ручная проверка
+
+- [ ] **Row 13 — Expert Council**: в чате написать
+  `/research как правильно выбрать vector database для RAG`
+  или «проведи глубокое исследование по теме X». Подождать ~2–3 минуты.
+  Проверить что ответ структурирован (суть → совет экспертов → рекомендации).
+  В DevTools → Network → response headers → `X-GPTHub-Trace` должен быть
+  `short_circuit: expert_council` с 3 ветками.
+- [ ] **Row 14 — PPTX**: написать «сделай презентацию по архитектуре
+  микросервисов» или `/pptx RAG in production`. Проверить что в ответе
+  есть ссылка «Скачать .pptx». Кликнуть — скачается файл, открыть в
+  PowerPoint/Google Slides — проверить что слайды есть.
+
+#### C. Killer demo scenario (для видео)
+
+Один непрерывный сценарий в **одном чате**, показывающий всю мощь:
+
+1. Загрузи PDF + напиши «Кратко перескажи, о чём этот документ»
+2. Отправь фото → «что на картинке?»
+3. Напиши «запомни что мне нравятся микросервисы и Go»
+4. Напиши «что ты обо мне помнишь?» → проверь что вернул факт
+5. `/research как правильно строить RAG pipeline` → подожди ~2 мин
+6. «сделай презентацию по результатам исследования» → скачай .pptx
+7. Открой DevTools → Network → последний запрос → `X-GPTHub-Trace`
+8. Покажи routing decision, model chain, council branches, timing
+
+**Время:** цель 2–3 минуты для видеозаписи.
+
+### [pending] Запись demo-видео (Шаг 8)
+
+- **Формат:** screen recording с OBS / QuickTime, 720p+.
+- **Сценарий:** пункт C выше.
+- **Голос:** по желанию, можно с субтитрами.
+- **Файл:** `docs/submission/demo.mp4` (или ссылка на облако).
 - **Result:** _не выполнено_
-- **Notes:** _—_
 
 ---
 

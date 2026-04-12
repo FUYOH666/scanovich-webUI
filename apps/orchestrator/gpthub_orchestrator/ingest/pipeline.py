@@ -19,6 +19,11 @@ from gpthub_orchestrator.ingest.parts import (
     strip_content_indices,
 )
 from gpthub_orchestrator.ingest.pdf_extract import PdfExtractError, parse_pdf_bytes
+from gpthub_orchestrator.ingest.richdoc import (
+    RichDocConvertError,
+    convert_richdoc_bytes,
+    is_richdoc_item,
+)
 from gpthub_orchestrator.ingest.url_fetch import (
     UrlFetchError,
     extract_urls_from_message_content,
@@ -86,6 +91,21 @@ def _is_plain_text_item(mime: str, filename: str) -> bool:
         return True
     low = filename.lower()
     return low.endswith(_PLAIN_TEXT_SUFFIXES)
+
+
+def _convert_richdoc_sync(item: FileWorkItem) -> str:
+    try:
+        return convert_richdoc_bytes(item.raw, filename=item.filename)
+    except RichDocConvertError as e:
+        logger.warning("richdoc_ingest_failed file=%s err=%s", item.filename, e)
+        return f"[Rich document could not be converted: {e}]"
+
+
+async def _process_one_richdoc(item: FileWorkItem) -> dict[str, Any]:
+    text = await asyncio.to_thread(_convert_richdoc_sync, item)
+    if len(text) > _ARTIFACT_CONTENT_CAP:
+        text = text[:_ARTIFACT_CONTENT_CAP] + "\n… [truncated by orchestrator]"
+    return {"type": "document_text", "title": item.filename, "content": text}
 
 
 async def _process_one_plain_text(item: FileWorkItem) -> dict[str, Any]:
@@ -252,6 +272,10 @@ async def run_ingest_pipeline(
             elif _is_audio_item(item.mime, item.filename):
                 tasks.append(_process_one_audio(item, settings, http))
                 meta.append(("audio", part_idx))
+                drop_indices.add(part_idx)
+            elif is_richdoc_item(item.mime, item.filename):
+                tasks.append(_process_one_richdoc(item))
+                meta.append(("richdoc", part_idx))
                 drop_indices.add(part_idx)
             elif _is_plain_text_item(item.mime, item.filename):
                 tasks.append(_process_one_plain_text(item))

@@ -4,19 +4,69 @@
 
 ### Changed
 
-- **Docs:** `ROADMAP.md` (§0.2 row 13, §0.4 шаг 1/5, §0.6 differentiation,
-  трек A), `README.md` (WOW-1 merge note), `docs/TEAM_BRIEF_RU.md`, and
-  `docs/NEW_CHAT_HANDOFF_RU.md` — синхронизированы с WOW-1 Expert Council
-  в `main` (`9393d30`) и базовым счётчиком **182** тестов.
-  Пересобран `docs/submission/GPTHub_features_matrix.xlsx` из матрицы.
+- **Docs:** full sync all canon docs (ROADMAP, README, TEAM_BRIEF_RU,
+  NEW_CHAT_HANDOFF_RU, FEATURE_MATRIX) with WOW-1 Council + WOW-3 PPTX
+  state, **234** tests, victory-plan step statuses (Steps 1–5 closed,
+  4/6/7 planned). Regenerated `docs/submission/GPTHub_features_matrix.xlsx`.
 
 ### Added
 
+- **Row 14 WOW-3 PPTX generation**: new
+  `apps/orchestrator/gpthub_orchestrator/pptx_gen.py` with RU/EN/slash
+  intent detection (`/pptx`, `/slides`, «сделай презентацию», «build a
+  deck»), JSON slide-plan request to `gpt-hub-strong` (glm-4.6-357b)
+  with one retry on parse failure, `python-pptx` deck builder (title +
+  bullet slides), file storage + unguessable-token download endpoint
+  `GET /v1/files/pptx/{token}`, OpenAI-compatible `chat.completion`
+  response with markdown download link. Classifier
+  `TaskType.PPTX_GENERATION`, router fallback, wired into `main.py`
+  between council and image-gen short-circuits. 52 unit tests in
+  `tests/test_pptx_gen.py` (intent detection, JSON parsing + fence
+  strip, plan validation including edge cases, python-pptx round-trip,
+  storage CRUD, mock LiteLLM plan request with retry, end-to-end
+  generation, response builders, classifier + router wiring). Settings:
+  `pptx_enabled`, `pptx_plan_model`, `pptx_plan_timeout_seconds`,
+  `pptx_plan_max_tokens`, `pptx_min_slides`, `pptx_max_slides`,
+  `pptx_storage_dir`, `pptx_public_base_url`. Row 14 moved from
+  `Deferred (wow candidate)` to `Implemented (WOW-3)` in
+  `FEATURE_MATRIX.md`.
+- **Row 6 DOCX/XLSX/PPTX support via markitdown**: new
+  `apps/orchestrator/gpthub_orchestrator/ingest/richdoc.py` — detection
+  by MIME + extension for `.docx/.xlsx/.pptx/.doc/.xls/.ppt/.rtf/.epub`,
+  conversion via Microsoft `markitdown` library to markdown text, wired
+  into `ingest/pipeline.py` between PDF and plain-text routing. 21
+  tests in `tests/test_ingest_richdoc.py` (detection, real DOCX/XLSX/PPTX
+  round-trip, garbage fallback, empty rejection, pipeline routing).
+- **Row 7 Tavily web search**: env vars already in `.env` and
+  `.env.example` (`ENABLE_WEB_SEARCH=true`, `WEB_SEARCH_ENGINE=tavily`,
+  `TAVILY_API_KEY`); confirmed loaded in running WebUI container.
+  Row 7 status stays `Implemented (UI-managed)`.
 - **Authorship:** `README.md` (Author), root `AUTHORS.md`, and `authors` in
   `apps/orchestrator/pyproject.toml` and `apps/embedding_shim/pyproject.toml`.
 
 ### Fixed
 
+- **Web search (Tavily) caused ContextWindowExceededError:** Open WebUI
+  injected full Tavily results into the chat messages, which combined
+  with existing chat history exceeded the 131K token limit of MWS models.
+  Added `WEB_SEARCH_RESULT_COUNT=2` and `TAVILY_EXTRACT_DEPTH=basic` to
+  `.env.example` and `.env` to limit result volume.
+- **PDF / file upload via Open WebUI crashed with `'NoneType' object has
+  no attribute 'encode'`:** Open WebUI v0.8.12 ran its own RAG/embedding
+  pipeline on uploaded files (`chat_completion_files_handler` →
+  `get_sources_from_items` → `query_collection` →
+  `embedding_function(...)`), but no embedding engine was configured
+  in our compose, so the lambda received `None` and crashed. The
+  architecturally correct fix is **not** to wire a second embedding
+  engine into WebUI — orchestrator already owns ingest via
+  `ingest/pipeline.py` (PDF + ~30 plain-text extensions + URL + audio).
+  Added `BYPASS_EMBEDDING_AND_RETRIEVAL=true` (and explicit empty
+  `RAG_EMBEDDING_ENGINE=`) to `.env.example` and `.env`. With bypass on,
+  the WebUI retrieval path takes the `file_object.data.get('content', '')`
+  branch (`retrieval/utils.py:1028`) and inlines the already-extracted
+  text directly into the chat payload, never touching the embedding
+  function. Recreating the `open-webui` container makes the fix live;
+  baseline `Row 6 Files` is unblocked for live PDF smoke.
 - **Orchestrator chat 500 after image-gen enabled:** the image-intent block
   in `main.py` reused the name `last_user_text`, shadowing the
   `memory.service.last_user_text` helper and breaking normal chat when
@@ -149,12 +199,14 @@
 
 ### Validation
 
-- 63 → 182 tests passing (+119 new tests covering URL parsing, plain-text
+- 63 → 255 tests passing (+171 new tests covering URL parsing, plain-text
   ingest, ASR settings fallback, image generation intent and response
   shape, memory command parser, SQLite store CRUD + cosine search,
   MWS embeddings client, the end-to-end memory command executor with
-  MockTransport, and the Expert Council fan-out / synthesis / fallback
-  / CoT-strip / classifier wiring).
+  MockTransport, the Expert Council fan-out / synthesis / fallback
+  / CoT-strip / classifier wiring, and PPTX intent detection / JSON plan
+  parsing / python-pptx builder / storage / end-to-end generation /
+  response builders / classifier + router wiring).
 - MWS contracts directly probed with curl against `.env.mws.local`:
   - `POST /v1/chat/completions` with `mws-gpt-alpha` → 200 OK.
   - `POST /v1/images/generations` with `qwen-image` → 200 OK (URL + b64).
@@ -163,14 +215,11 @@
 
 ### Not yet done (tracked in ROADMAP section 0)
 
-- Row 7: enable Open WebUI Tavily web search via env.
-- Row 14 wow: PPTX generation via `python-pptx`.
-- Live E2E smoke through the docker stack (blocked on stopping the old
-  `gpthub-v3-*` stack that holds ports 3000/4000/8089).
+- Operator-level live verification for rows 2, 4, 5, 6, 11 (Step 6).
 - Architecture diagram PNG/SVG.
 - Demo video 2–3 minutes.
-- Filled `GPTHub шаблон фич.xlsx`.
-- Presentation deck.
+- Presentation deck finalization.
+- git tag `demo-ready`.
 
 ## [earlier]
 
