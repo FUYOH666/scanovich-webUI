@@ -56,15 +56,17 @@ Optional `rag` support is infrastructure for Open WebUI, not a second flagship p
 
 ## Current State
 
-This repo contains a runnable product spine with **226 passing unit +
-integration tests** (`apps/orchestrator`, `uv run pytest`). What's live in code right now:
+This repo contains a runnable product spine with **226+** unit +
+integration tests in `apps/orchestrator` (`uv run pytest`). История счётчика:
+**63 → 182 → 226+** (детали и волна markitdown — `CHANGELOG.md`, §Validation).
+What's live in code right now:
 
 - text chat through the orchestrator facade (row 1)
 - automatic + manual model choice via role-backed alias chain (rows 10, 11)
 - markdown / code rendering via OpenAI-compatible passthrough (row 12)
 - image-aware multimodal routing for VLM (row 5)
-- mixed-input ingest: PDF, plain text (≈30 extensions), audio, and **URL
-  fetch with SSRF protection** (rows 6, 8)
+- mixed-input ingest: PDF, **DOCX/XLSX/PPTX** (via markitdown), plain text
+  (≈30 extensions), audio, and **URL fetch with SSRF protection** (rows 6, 8)
 - audio ingest + automatic ASR against MWS `whisper-medium` (row 4)
 - **in-chat image generation** via a MWS `/images/generations`
   short-circuit on `qwen-image` (row 3)
