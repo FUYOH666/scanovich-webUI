@@ -302,6 +302,29 @@ class Settings(BaseSettings):
             "even if they leak some CoT despite reasoning-exclude."
         ),
     )
+    pptx_enabled: bool = Field(
+        default=True,
+        description="If true, orchestrator detects PPTX intent and builds a deck via python-pptx.",
+    )
+    pptx_plan_model: str = Field(
+        default="gpt-hub-strong",
+        description="LiteLLM alias used to draft the slide plan JSON (default: glm-4.6-357b).",
+    )
+    pptx_plan_timeout_seconds: float = Field(default=180.0, ge=10.0, le=600.0)
+    pptx_plan_max_tokens: int = Field(default=2500, ge=200, le=8000)
+    pptx_min_slides: int = Field(default=5, ge=2, le=20)
+    pptx_max_slides: int = Field(default=10, ge=3, le=30)
+    pptx_storage_dir: str = Field(
+        default="/tmp/gpthub_pptx",
+        description="Filesystem dir where generated .pptx files are written for download.",
+    )
+    pptx_public_base_url: str = Field(
+        default="http://localhost:8089",
+        description=(
+            "Public origin clients can hit to download generated decks "
+            "(matches the orchestrator host port mapping in docker-compose)."
+        ),
+    )
 
     @field_validator("model_roles_path", "role_prompts_path", mode="before")
     @classmethod
