@@ -8,6 +8,100 @@ from typing import Any
 
 from gpthub_orchestrator.pptx.schema import MAX_SLIDES, SlidePlan, SlideSpec, normalize_slide_kind
 
+# Parallel slide agents: hard cap on visible text (title + bullet strings) after LLM output.
+SLIDE_AGENT_MAX_VISIBLE_CHARS = 500
+
+
+def _visible_char_len(title: str, bullets: list[str]) -> int:
+    return len(title) + sum(len(b) for b in bullets)
+
+
+def _truncate_line_at_word_boundary(line: str, max_chars: int) -> str:
+    """Shorten a single line without splitting mid-word when possible."""
+    if max_chars <= 0:
+        return ""
+    if len(line) <= max_chars:
+        return line
+    prefix = line[:max_chars]
+    last_space = prefix.rfind(" ")
+    if last_space > 0:
+        return prefix[:last_space]
+    # One long token (URL, etc.): no clean word break — keep a prefix up to the cap.
+    return prefix
+
+
+def _truncate_text_respecting_lines(text: str, max_chars: int) -> str:
+    """Trim to max_chars: drop whole lines from the end; last line only trimmed at word end, not mid-line."""
+    if max_chars <= 0:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    lines = text.split("\n")
+    if len(lines) == 1:
+        return _truncate_line_at_word_boundary(lines[0], max_chars)
+
+    acc: list[str] = []
+    used = 0
+    for i, line in enumerate(lines):
+        sep = 0 if i == 0 else 1
+        if i == 0:
+            if len(line) <= max_chars:
+                acc.append(line)
+                used = len(line)
+            else:
+                return _truncate_line_at_word_boundary(line, max_chars)
+        else:
+            needed = sep + len(line)
+            if used + needed <= max_chars:
+                acc.append(line)
+                used += needed
+            else:
+                break
+    return "\n".join(acc)
+
+
+def clamp_slide_visible_to_max(
+    spec: SlideSpec,
+    *,
+    max_chars: int = SLIDE_AGENT_MAX_VISIBLE_CHARS,
+) -> SlideSpec:
+    """Drop whole bullets from the end, then trim remaining text at line/word boundaries.
+
+    Never slices arbitrary substrings mid-line except as a last resort for a single token
+    without spaces. Speaker notes and kind are unchanged.
+    """
+    title = spec.title
+    bullets = list(spec.bullets)
+
+    while len(bullets) > 1 and _visible_char_len(title, bullets) > max_chars:
+        bullets.pop()
+
+    if _visible_char_len(title, bullets) <= max_chars:
+        return SlideSpec(title=title, bullets=bullets, notes=spec.notes, kind=spec.kind)
+
+    if not bullets:
+        return SlideSpec(
+            title=_truncate_text_respecting_lines(title, max_chars),
+            bullets=[],
+            notes=spec.notes,
+            kind=spec.kind,
+        )
+
+    budget = max_chars - len(title)
+    if budget <= 0:
+        return SlideSpec(
+            title=_truncate_text_respecting_lines(title, max_chars),
+            bullets=[],
+            notes=spec.notes,
+            kind=spec.kind,
+        )
+    return SlideSpec(
+        title=title,
+        bullets=[_truncate_text_respecting_lines(bullets[0], budget)],
+        notes=spec.notes,
+        kind=spec.kind,
+    )
+
 _FENCE = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
 
 

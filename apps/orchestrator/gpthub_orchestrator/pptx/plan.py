@@ -20,6 +20,8 @@ from gpthub_orchestrator.router import choose_model
 from gpthub_orchestrator.settings import Settings
 
 from gpthub_orchestrator.pptx.parse import (
+    SLIDE_AGENT_MAX_VISIBLE_CHARS,
+    clamp_slide_visible_to_max,
     parse_outline_plan_text,
     parse_single_slide_detail_text,
     parse_slide_plan_text,
@@ -106,7 +108,8 @@ Optional "kind" from:
 Rules:
 - The JSON "title" must match the assigned slide title exactly (same language and wording).
 - bullets: 0–8 strings; follow the density level.
-- notes: speaker notes or use "".
+- Prefer on-slide text (title + bullets) ≤ {SLIDE_AGENT_MAX_VISIBLE_CHARS} characters; the server truncates excess bullets/text if needed.
+- notes: speaker notes (not counted toward the on-slide cap); keep brief or use "".
 - Escape any double quotes inside strings properly."""
 
 
@@ -118,7 +121,8 @@ _RETRY_USER = (
 
 _RETRY_SLIDE_USER = (
     "Your previous answer was not usable. Reply with ONLY one JSON object for this single slide: "
-    '{"title":"...","bullets":["..."],"notes":"...","kind":null or allowed kind} — no markdown, no prose.'
+    '{"title":"...","bullets":["..."],"notes":"...","kind":null or allowed kind} — no markdown, no prose. '
+    f"title + bullets combined should stay ≤ {SLIDE_AGENT_MAX_VISIBLE_CHARS} characters (excess is truncated)."
 )
 
 
@@ -333,6 +337,8 @@ def _slide_agent_user_block(
         f"Write content for slide {slide_index + 1} of {total_slides} only.\n"
         f'Assigned title (JSON "title" must match this exactly): {title}\n'
         f"Outline kind hint: {kh}\n\n"
+        f"Target ≤{SLIDE_AGENT_MAX_VISIBLE_CHARS} characters for title + bullets on this slide "
+        "(notes separate; overflow is truncated server-side).\n\n"
         "Return one JSON object for this slide only."
     )
 
@@ -483,10 +489,12 @@ async def _request_slide_plan_parallel(
             )
             try:
                 payload = parse_single_slide_detail_text(raw)
-                spec = slide_spec_from_agent_payload(
-                    payload,
-                    title_fallback=skeleton.title,
-                    kind_fallback=skeleton.kind,
+                spec = clamp_slide_visible_to_max(
+                    slide_spec_from_agent_payload(
+                        payload,
+                        title_fallback=skeleton.title,
+                        kind_fallback=skeleton.kind,
+                    ),
                 )
             except (ValueError, json.JSONDecodeError, ValidationError) as e:
                 logger.info("pptx_slide_agent_parse_retry idx=%s err=%s", idx, e)
@@ -504,10 +512,12 @@ async def _request_slide_plan_parallel(
                 )
                 try:
                     payload = parse_single_slide_detail_text(raw2)
-                    spec = slide_spec_from_agent_payload(
-                        payload,
-                        title_fallback=skeleton.title,
-                        kind_fallback=skeleton.kind,
+                    spec = clamp_slide_visible_to_max(
+                        slide_spec_from_agent_payload(
+                            payload,
+                            title_fallback=skeleton.title,
+                            kind_fallback=skeleton.kind,
+                        ),
                     )
                 except (ValueError, json.JSONDecodeError, ValidationError) as e2:
                     raise PptxGenError(f"slide_agent_json_invalid idx={idx}") from e2
