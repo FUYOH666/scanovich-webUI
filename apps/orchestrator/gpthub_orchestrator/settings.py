@@ -167,6 +167,10 @@ class Settings(BaseSettings):
         le=10,
         description="Cap on slide count after outline/monolithic (must be ≤ MAX_SLIDES in pptx/schema).",
     )
+    pptx_intro_slide_enabled: bool = Field(
+        default=True,
+        description="If true, prepend a title/intro slide (topic from first planned slide); layout is probed separately.",
+    )
     pptx_plan_tone: str = Field(
         default="auto",
         description="Tone hint for slide-plan LLM (auto|general|persuasive|inspiring|instructive|engaging).",

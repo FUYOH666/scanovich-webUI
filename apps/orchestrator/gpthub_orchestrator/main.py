@@ -48,6 +48,7 @@ from gpthub_orchestrator.pptx import (
     build_pptx_error_sse_chunks,
     build_pptx_from_plan,
     build_pptx_sse_chunks,
+    deck_title_for_intro,
     load_stripped_base_presentation,
     pptx_download_filename,
     request_slide_plan,
@@ -565,6 +566,7 @@ async def chat_completions(
                 artifact_id=artifact_id,
                 token=one_time_token,
             )
+            intro_title = deck_title_for_intro(plan) if settings.pptx_intro_slide_enabled else None
             if bool(body.get("stream")):
 
                 async def pptx_ok_sse():
@@ -572,6 +574,7 @@ async def chat_completions(
                         model_label=model_vis,
                         plan=plan,
                         download_url=download_url,
+                        intro_title=intro_title,
                     ):
                         yield ch
 
@@ -584,6 +587,7 @@ async def chat_completions(
                 model_label=model_vis,
                 plan=plan,
                 download_url=download_url,
+                intro_title=intro_title,
             )
             return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
 

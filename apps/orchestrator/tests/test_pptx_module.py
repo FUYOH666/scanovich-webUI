@@ -1,9 +1,11 @@
 import json
 import os
+from io import BytesIO
 from pathlib import Path
 
 import httpx
 import pytest
+from pptx import Presentation  # type: ignore[import-untyped]
 
 os.environ.setdefault("LITELLM_BASE_URL", "http://127.0.0.1:9")
 os.environ.setdefault("ORCHESTRATOR_API_KEY", "k")
@@ -91,6 +93,17 @@ def test_markdown_preview_shows_kind():
     assert "макет: `bullets`" in md
 
 
+def test_markdown_preview_intro_line():
+    plan = SlidePlan(
+        slides=[SlideSpec(title="Тема", bullets=["a"], notes="")],
+    )
+    md = markdown_preview_with_download_link(
+        plan, "https://example.test/d.pptx?token=x", intro_title="Тема"
+    )
+    assert "Титульный слайд" in md
+    assert "Тема" in md
+
+
 def test_build_pptx_from_plan_zip_magic():
     plan = SlidePlan(
         slides=[
@@ -99,6 +112,12 @@ def test_build_pptx_from_plan_zip_magic():
     )
     blob = build_pptx_from_plan(plan, settings=_settings())
     assert blob.startswith(b"PK")
+    assert len(Presentation(BytesIO(blob)).slides) == 2  # intro + content
+
+    blob_no_intro = build_pptx_from_plan(
+        plan, settings=_settings(pptx_intro_slide_enabled=False)
+    )
+    assert len(Presentation(BytesIO(blob_no_intro)).slides) == 1
 
 
 def test_build_pptx_empty_plan_raises():

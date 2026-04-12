@@ -18,3 +18,4 @@
 data/
 !apps/orchestrator/gpthub_orchestrator/data/
 tmp/
+*.out.txt

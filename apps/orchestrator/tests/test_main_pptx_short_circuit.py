@@ -62,6 +62,7 @@ async def test_pptx_short_circuit_non_stream_ok():
             data = r.json()
             content = data["choices"][0]["message"]["content"]
             assert "Превью слайдов" in content
+            assert "Титульный слайд" in content
             assert "Введение" in content
             assert "Скачать презентацию" in content
             m = re.search(r"\[Скачать презентацию\]\(([^)]+)\)", content)

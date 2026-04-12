@@ -126,6 +126,41 @@ def _log_pptx_timing(payload: dict[str, Any]) -> None:
     logger.info("pptx_timing %s", json.dumps(payload, ensure_ascii=False))
 
 
+def _log_pptx_slide_agent_done(
+    *,
+    idx: int,
+    total: int,
+    spec: SlideSpec,
+    ms: float | None,
+    mode: str,
+) -> None:
+    payload: dict[str, Any] = {
+        "phase": "pptx_slide_agent_done",
+        "mode": mode,
+        "idx": idx,
+        "total": total,
+        "title": spec.title,
+        "kind": spec.kind,
+        "bullets": spec.bullets,
+        "notes": spec.notes,
+    }
+    if ms is not None:
+        payload["ms"] = round(ms, 1)
+    logger.info("pptx_timing %s", json.dumps(payload, ensure_ascii=False))
+
+
+def _finalize_monolithic_plan(plan: SlidePlan) -> SlidePlan:
+    for i, spec in enumerate(plan.slides):
+        _log_pptx_slide_agent_done(
+            idx=i,
+            total=len(plan.slides),
+            spec=spec,
+            ms=None,
+            mode="monolithic",
+        )
+    return plan
+
+
 def _retryable_litellm_status(status_code: int) -> bool:
     return status_code in (429, 503)
 
@@ -335,7 +370,7 @@ async def _request_slide_plan_monolithic(
         }
     )
     try:
-        return parse_slide_plan_text(raw)
+        return _finalize_monolithic_plan(parse_slide_plan_text(raw))
     except (ValueError, json.JSONDecodeError) as e:
         logger.info("pptx_plan_parse_retry err=%s", e)
         retry_msgs: list[dict[str, str]] = [
@@ -359,7 +394,7 @@ async def _request_slide_plan_monolithic(
             }
         )
         try:
-            return parse_slide_plan_text(raw2)
+            return _finalize_monolithic_plan(parse_slide_plan_text(raw2))
         except (ValueError, json.JSONDecodeError) as e2:
             logger.warning("pptx_plan_parse_failed err=%s", e2)
             raise PptxGenError("slide_plan_json_invalid") from e2
@@ -415,6 +450,7 @@ async def _request_slide_plan_parallel(
             "phase": "plan_outline_llm_ms",
             "ms": round(outline_ms, 1),
             "slides": n,
+            "outline": [{"title": s.title, "kind": s.kind} for s in outline_plan.slides],
         }
     )
 
@@ -478,6 +514,13 @@ async def _request_slide_plan_parallel(
             elapsed = (time.perf_counter() - t0) * 1000
             per_slide_ms.append(elapsed)
             logger.debug("pptx_timing slide_agent idx=%s ms=%.1f", idx, elapsed)
+            _log_pptx_slide_agent_done(
+                idx=idx,
+                total=n,
+                spec=spec,
+                ms=elapsed,
+                mode="parallel_slide_agent",
+            )
             return spec
 
     t_batch = time.perf_counter()

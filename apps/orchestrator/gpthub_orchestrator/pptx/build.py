@@ -11,6 +11,7 @@ from gpthub_orchestrator.pptx.schema import (
     MAX_SLIDES,
     PptxGenError,
     SlidePlan,
+    SlideSpec,
 )
 from gpthub_orchestrator.settings import Settings
 
@@ -43,6 +44,29 @@ _PREFERRED_LAYOUT_NAME_PARTS: tuple[str, ...] = (
     "BLANK",
     "CUSTOM",
 )
+
+# Title / section-style layouts first for the optional intro slide (no bullets).
+_INTRO_LAYOUT_NAME_PARTS: tuple[str, ...] = (
+    "TITLE_ONLY",
+    "TITLE",
+    "SECTION_HEADER",
+    "SECTION_TITLE",
+    "CAPTION",
+    "BIG_NUMBER",
+    "TITLE_AND_BODY",
+    "MAIN_POINT",
+    "ONE_COLUMN",
+    "TWO_COLUMN",
+    "BLANK",
+    "CUSTOM",
+)
+
+
+def deck_title_for_intro(plan: SlidePlan) -> str:
+    """Topic line for the opening slide (first planned slide title, or a fallback)."""
+    if not plan.slides:
+        return "Presentation"
+    return (plan.slides[0].title or "").strip() or "Presentation"
 
 
 def _clip(s: str, max_len: int) -> str:
@@ -94,12 +118,17 @@ def _delete_all_slides(prs: Presentation) -> None:
         del prs.slides._sldIdLst[0]
 
 
-def _layout_probe_sequence(prs: Presentation) -> list[int]:
-    """Order slide_layout indices: themed content layouts first, then the rest."""
+def _layout_probe_sequence(
+    prs: Presentation,
+    *,
+    preferred_name_parts: tuple[str, ...] | None = None,
+) -> list[int]:
+    """Order slide_layout indices: preferred name substrings first, then the rest."""
+    parts = preferred_name_parts if preferred_name_parts is not None else _PREFERRED_LAYOUT_NAME_PARTS
     n = len(prs.slide_layouts)
     ordered: list[int] = []
     seen: set[int] = set()
-    for part in _PREFERRED_LAYOUT_NAME_PARTS:
+    for part in parts:
         for i in range(n):
             if i in seen:
                 continue
@@ -182,9 +211,14 @@ def _apply_spec_to_slide(slide: object, spec: object) -> None:
             logger.warning("pptx_notes_skip err=%s", e)
 
 
-def _probe_first_layout_index(prs: Presentation, spec: object) -> int:
+def _probe_first_layout_index(
+    prs: Presentation,
+    spec: object,
+    *,
+    preferred_name_parts: tuple[str, ...] | None = None,
+) -> int:
     n = len(prs.slide_layouts)
-    sequence = _layout_probe_sequence(prs)
+    sequence = _layout_probe_sequence(prs, preferred_name_parts=preferred_name_parts)
     for idx in sequence:
         if idx >= n:
             continue
@@ -257,14 +291,18 @@ def build_pptx_from_plan(
 
     prs = base_prs if base_prs is not None else load_stripped_base_presentation(settings)
 
-    layout_idx: int | None = None
+    specs: list[SlideSpec] = []
+    if settings.pptx_intro_slide_enabled:
+        specs.append(
+            SlideSpec(title=deck_title_for_intro(plan), bullets=[], notes=""),
+        )
+    specs.extend(plan.slides[:MAX_SLIDES])
+
     try:
-        for spec in plan.slides[:MAX_SLIDES]:
-            if layout_idx is None:
-                layout_idx = _probe_first_layout_index(prs, spec)
-            else:
-                slide = prs.slides.add_slide(prs.slide_layouts[layout_idx])
-                _apply_spec_to_slide(slide, spec)
+        for i, spec in enumerate(specs):
+            intro = settings.pptx_intro_slide_enabled and i == 0
+            preferred = _INTRO_LAYOUT_NAME_PARTS if intro else None
+            _probe_first_layout_index(prs, spec, preferred_name_parts=preferred)
     except IndexError as e:
         raise PptxGenError("pptx_no_layout") from e
 

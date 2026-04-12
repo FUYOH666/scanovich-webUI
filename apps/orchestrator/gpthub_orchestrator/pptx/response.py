@@ -15,8 +15,17 @@ from gpthub_orchestrator.pptx.schema import SlidePlan
 _SSE_CONTENT_SLICE_CHARS = 12_288
 
 
-def markdown_preview_with_download_link(plan: SlidePlan, download_url: str) -> str:
+def markdown_preview_with_download_link(
+    plan: SlidePlan,
+    download_url: str,
+    *,
+    intro_title: str | None = None,
+) -> str:
     lines = ["### Превью слайдов", ""]
+    if intro_title:
+        t = intro_title.strip() or "(без заголовка)"
+        lines.append(f"- **Титульный слайд:** {t}")
+        lines.append("")
     for i, spec in enumerate(plan.slides, start=1):
         title = (spec.title or "").strip() or "(без заголовка)"
         kind = (spec.kind or "").strip()
@@ -53,8 +62,9 @@ def build_pptx_chat_completion(
     model_label: str,
     plan: SlidePlan,
     download_url: str,
+    intro_title: str | None = None,
 ) -> dict[str, Any]:
-    content = markdown_preview_with_download_link(plan, download_url)
+    content = markdown_preview_with_download_link(plan, download_url, intro_title=intro_title)
     return {
         "id": f"chatcmpl-pptx-{uuid.uuid4().hex[:12]}",
         "object": "chat.completion",
@@ -94,8 +104,14 @@ def _slice_assistant_content_for_sse(text: str, *, max_chars: int = _SSE_CONTENT
     return [text[i : i + max_chars] for i in range(0, len(text), max_chars)]
 
 
-def build_pptx_sse_chunks(*, model_label: str, plan: SlidePlan, download_url: str) -> list[bytes]:
-    content = markdown_preview_with_download_link(plan, download_url)
+def build_pptx_sse_chunks(
+    *,
+    model_label: str,
+    plan: SlidePlan,
+    download_url: str,
+    intro_title: str | None = None,
+) -> list[bytes]:
+    content = markdown_preview_with_download_link(plan, download_url, intro_title=intro_title)
     pieces = _slice_assistant_content_for_sse(content)
     cid = f"chatcmpl-pptx-{uuid.uuid4().hex[:12]}"
     created = int(time.time())

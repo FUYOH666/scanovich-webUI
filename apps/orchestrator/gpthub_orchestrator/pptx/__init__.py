@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from gpthub_orchestrator.pptx.build import build_pptx_from_plan, load_stripped_base_presentation
+from gpthub_orchestrator.pptx.build import (
+    build_pptx_from_plan,
+    deck_title_for_intro,
+    load_stripped_base_presentation,
+)
 from gpthub_orchestrator.pptx.parse import extract_json_object, parse_slide_plan_text
 from gpthub_orchestrator.pptx.plan import request_slide_plan
 from gpthub_orchestrator.pptx.response import (
@@ -35,6 +39,7 @@ __all__ = [
     "build_pptx_error_chat_completion",
     "build_pptx_error_sse_chunks",
     "build_pptx_from_plan",
+    "deck_title_for_intro",
     "build_pptx_sse_chunks",
     "load_stripped_base_presentation",
     "extract_json_object",
