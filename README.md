@@ -96,7 +96,9 @@ integration tests**. What's live in code right now:
   deck build → download link via `GET /v1/files/pptx/{token}`.
   57 unit tests (`test_pptx_gen.py`). **Live PASS 2026-04-12** —
   7-slide deck, 35 KB, download OK.
-- web search through Open WebUI Tavily integration (row 7, UI-managed)
+- web search through Open WebUI Tavily integration (row 7, UI-managed; with
+  `BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL`, the WebUI **Sources** panel may not
+  match the inlined snippets — see `FEATURE_MATRIX.md` / `docs/LIVE_SMOKE.md`)
 
 Still open inside the P0 scope:
 

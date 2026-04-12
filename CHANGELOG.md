@@ -4,6 +4,12 @@
 
 ### Added
 
+- **Open WebUI web search prod default:** `.env.example` documents and defaults
+  **`BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=true`** so Tavily results are not
+  routed through WebUI vector embedding when no embedding engine is configured
+  (avoids `NoneType.encode`). `FEATURE_MATRIX.md` row 7, `docs/LIVE_SMOKE.md`,
+  `docs/NEW_CHAT_HANDOFF_RU.md` aligned; follow-up notes UX of the Sources panel
+  when bypass is on.
 - **PPTX plan model benchmark:** LiteLLM aliases `gpt-hub-pptx-llama33` →
   `llama-3.3-70b-instruct` and `gpt-hub-pptx-qwen235a22` →
   `Qwen3-235B-A22B-Instruct-2507-FP8` in [`infra/litellm/config.yaml`](infra/litellm/config.yaml);
@@ -20,6 +26,10 @@
   with **`gpt-hub-reasoning-or`** (qwen3-coder-480b), each with **`gpt-hub-turbo`**
   as second-step fallback before `gpt-hub-fallback`. Aligns classifier roles with
   MWS capabilities for submission demos (was alpha-first for all non-vision roles).
+- **Docs (web search UX):** `ARCHITECTURE.md`, `FEATURE_MATRIX.md` row 7,
+  `docs/LIVE_SMOKE.md` — зафиксировано поведение «счётчик источников / источники не
+  найдены» при `BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL`: поиск встраивается в
+  сообщения, панель цитат WebUI может оставаться пустой.
 - **Docs:** новый канон [`docs/MODEL_ROUTING_POLICY.md`](docs/MODEL_ROUTING_POLICY.md)
   — исходная alpha-first политика baseline и текущая политика реестра ролей
   `model_roles.yaml` version 2; ссылки из `README.md`, `NEW_CHAT_HANDOFF_RU.md`,

@@ -49,7 +49,7 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 | 4 | Аудио + ASR | **Implemented** (ASR fallback → MWS `whisper-medium`; нужен live `.wav` upload) |
 | 5 | Изображения (VLM) | Implemented (код + тесты; нужен live smoke с фото) |
 | 6 | Файлы | **Implemented** + **fix 2026-04-12**: WebUI делал свой RAG-эмбеддинг → `'NoneType' encode` краш на загрузке PDF; включили `BYPASS_EMBEDDING_AND_RETRIEVAL=true` (см. `LIVE_SMOKE.md` 2026-04-12). Ждём операторский retry для финального `Implemented` в matrix. |
-| 7 | Поиск в интернете | **Implemented** (UI-managed: `ENABLE_WEB_SEARCH=true` + Tavily env vars in `.env`; confirmed in container) |
+| 7 | Поиск в интернете | **Implemented** (UI-managed: `ENABLE_WEB_SEARCH=true` + Tavily + **`BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=true`**; без bypass — краш на `embedding_function=None`. С bypass панель «источников» в WebUI может врать, см. `LIVE_SMOKE.md` Row 7 follow-up) |
 | 8 | Веб-парсинг URL | **Implemented** (`ingest/url_fetch.py`, SSRF, 12 тестов; live PASS в `demo.sh`) |
 | 9 | Долгосрочная память | **Implemented** (SQLite + `qwen3-embedding-8b`; live PASS в `demo.sh`) |
 | 10 | Автовыбор модели | **Implemented** (live trace в `demo.sh`) |

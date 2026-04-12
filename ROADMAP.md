@@ -170,7 +170,9 @@ WebUI admin подтверждает: Tavily ON, 2 results, basic depth.
    ENABLE_WEB_SEARCH=true
    WEB_SEARCH_ENGINE=tavily
    TAVILY_API_KEY=...
+   BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=true
    ```
+   (без последней строки WebUI пытается векторизовать сниппеты без embedding engine.)
 2. Пересобрать только контейнер WebUI: `docker compose up -d --force-recreate open-webui`.
 3. Проверить через WebUI: кнопка «web search» появилась, запрос возвращает
    результаты.
