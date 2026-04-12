@@ -83,6 +83,17 @@
   Until that retry is recorded here, Row 6 Files remains formally
   blocked from `Implemented` in `FEATURE_MATRIX.md`.
 
+## 2026-04-12 — Prod WebUI `simple_chat` latency (лог `ресурсы/YandexCloud/logs.txt`)
+
+- **Stack commit:** _n/a_ (снимок логов с хоста `gpthub-prod-*`, не привязан к локальному SHA).
+- **Env:** prod compose; Open WebUI → orchestrator → LiteLLM → MWS.
+- **Input:** Ты живой
+- **Model(s) used:** `gpt-hub-turbo` (`execution_trace`: `model_used` / `selected_model`, `task_type` `simple_chat`).
+- **Latency:** **~61.4 s** по WebUI (`POST /api/chat/completions` 16:31:16.504 → `POST /api/chat/completed` 16:32:17.884); **~60.3 s** оркестратор → LiteLLM (16:31:16.514 → httpx `200` 16:32:16.771).
+- **Result:** OK (ответ дошёл, `chat/completed` 200).
+- **Trace highlights:** `classifier_source` heuristic; в конце того же окна — `memory_retrieve_embed_failed` / `embedding_http_error` (`ReadTimeout`), чат при этом завершился.
+- **Notes:** Цифры сняты с постфактум логов; для сравнения с другими стендами полезно тот же интервал completions→completed.
+
 ## 2026-04-11 11:46 — Step 5 full `demo.sh` (including WOW-1) end-to-end
 
 - **Stack commit:** `wow/expert-council` @ `9ff08ce` (council feature commit).
