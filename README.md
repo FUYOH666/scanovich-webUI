@@ -13,6 +13,7 @@ The repo is intentionally frozen around feature rows `1-12` and `P0` only. Every
 - `infra/docker-compose.yml`: self-contained stack wiring for WebUI, orchestrator, LiteLLM, and optional RAG support.
 - `infra/litellm/config.yaml`: vendored LiteLLM alias config, rewritten for an MWS-first baseline.
 - Canon docs that explain the architecture, frozen roadmap, and current feature baseline without legacy branch sprawl.
+- **`docs/MODEL_ROUTING_POLICY.md`**: политика выбора модели (baseline и эволюция ролей); фактический реестр — `data/model_roles.yaml`.
 
 ## Quick Start
 
@@ -38,6 +39,13 @@ uv sync --extra dev
 uv run pytest -q
 ```
 
+**PPTX plan model benchmark** (live LiteLLM + MWS; compare `gpt-hub-strong` vs optional instruct aliases):
+
+```bash
+docker compose -f infra/docker-compose.yml up -d --build   # pick up infra/litellm/config.yaml
+cd apps/orchestrator && uv sync --extra dev && uv run python ../../scripts/bench_pptx_plan_models.py --repeat 3
+```
+
 Open WebUI will be on `http://localhost:3000`, LiteLLM on `http://localhost:4000`, and the orchestrator health endpoint on `http://localhost:8089/healthz`.
 
 ## Demo Lock
@@ -57,8 +65,9 @@ Optional `rag` support is infrastructure for Open WebUI, not a second flagship p
 ## Current State
 
 This repo contains a runnable product spine with **226+** unit +
-integration tests in `apps/orchestrator` (`uv run pytest`). История счётчика:
-**63 → 182 → 226+** (детали и волна markitdown — `CHANGELOG.md`, §Validation).
+integration tests in `apps/orchestrator` (`uv run pytest`; на смежных
+снимках встречалось **261** — ориентир только после локального `pytest`).
+История счётчика: **63 → 182 → 226+** (детали — `CHANGELOG.md`, §Validation).
 What's live in code right now:
 
 - text chat through the orchestrator facade (row 1)
@@ -84,14 +93,17 @@ What's live in code right now:
 - `X-GPTHub-Trace` with full routing / fallback / ingest observability (row 15)
 - optional embedding normalization for RAG mode (infra only)
 - **WOW-3 PPTX (row 14)** — `task_type=pptx` → `gpthub_orchestrator/pptx/`:
-  parallel or monolithic slide-plan LLM (via LiteLLM / strong chain),
+  parallel or monolithic slide-plan LLM (LiteLLM / strong chain),
   `python-pptx` deck build, markdown preview + **`GET /artifacts/pptx/{id}?token=…`**
-  download. **36** focused tests; see `FEATURE_MATRIX.md` and `docs/LIVE_SMOKE.md`.
+  download; опционально бенчмарк алиасов `gpt-hub-pptx-*` — `scripts/bench_pptx_plan_models.py`.
+  **36** focused tests; см. `FEATURE_MATRIX.md`, `docs/LIVE_SMOKE.md`.
+- **Web search (row 7)** — Open WebUI + Tavily при `ENABLE_WEB_SEARCH=true` и ключе (UI-managed).
 
 Still open inside the P0 scope:
 
-- row 7 web search — needs `ENABLE_WEB_SEARCH=true` + `TAVILY_API_KEY` in env (Open WebUI);
-- operator live pass for the full WebUI checklist (voice, uploads, Tavily, PPTX link) — journal in `docs/LIVE_SMOKE.md`.
+- row 7 — убедиться, что Tavily реально включён в нужном стенде;
+- operator live pass по чеклисту WebUI (voice, uploads, Tavily, PPTX-ссылка) — журнал `docs/LIVE_SMOKE.md`;
+- demo video, финальные submission-артефакты, тег `demo-ready`.
 
 All gaps and phases are tracked in `ROADMAP.md` (section 0) and
 `FEATURE_MATRIX.md`. Live model snapshot is in `docs/MWS_CATALOG.md`.

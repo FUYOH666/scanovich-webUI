@@ -21,6 +21,7 @@ That path is the product. Everything else in the repo is supporting infrastructu
 - Owns the runtime policy layer.
 - Exposes `/healthz`, `/readyz`, `GET /v1/models`, and `POST /v1/chat/completions`.
 - Classifies requests, merges prompt policy, injects mixed-input artifacts, and emits `X-GPTHub-Trace`.
+- Role → LiteLLM alias order is defined in `apps/orchestrator/gpthub_orchestrator/data/model_roles.yaml`; human-readable policy (baseline vs current) lives in `docs/MODEL_ROUTING_POLICY.md`.
 
 ### LiteLLM
 

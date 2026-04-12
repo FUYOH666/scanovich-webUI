@@ -16,6 +16,7 @@ from gpthub_orchestrator.pptx_gen import (
     PptxResult,
     SlidePlan,
     _strip_code_fence,
+    _strip_cot_blocks,
     _try_parse_plan_json,  # type: ignore[reportPrivateUsage]
     build_pptx_chat_completion,
     build_pptx_from_plan,
@@ -123,6 +124,9 @@ _HAPPY_PLAN_JSON = json.dumps(
         "build a deck on enterprise RAG",
         "create slides for our roadmap",
         "powerpoint about AI safety",
+        "давай, в формате pptx будет? создай",
+        "сделай в формате pptx",
+        "в pptx формате собери",
     ],
 )
 def test_is_pptx_request_positive(text: str) -> None:
@@ -184,6 +188,21 @@ def test_try_parse_plan_json_with_fence() -> None:
 def test_try_parse_plan_json_extracts_brace_block() -> None:
     noisy = "Sure, here you go:\n" + _HAPPY_PLAN_JSON + "\nLet me know if you need changes."
     obj = _try_parse_plan_json(noisy)
+    assert obj["title"] == "RAG в продакшене"
+
+
+def test_try_parse_plan_json_strips_think_block() -> None:
+    """MWS glm-4.6 wraps output in <think>…</think> CoT before the actual JSON."""
+    wrapped = "<think>Let me plan this...\n{fake braces}\n</think>\n" + _HAPPY_PLAN_JSON
+    obj = _try_parse_plan_json(wrapped)
+    assert obj["title"] == "RAG в продакшене"
+
+
+def test_try_parse_plan_json_tolerates_trailing_prose() -> None:
+    """Instruct models may append text after valid JSON (json.loads 'Extra data')."""
+    noisy = _HAPPY_PLAN_JSON + "\n\nHope this helps! Summary follows…"
+    obj = _try_parse_plan_json(noisy)
+    assert isinstance(obj, dict)
     assert obj["title"] == "RAG в продакшене"
 
 

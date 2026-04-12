@@ -27,6 +27,14 @@
 
 ---
 
+## 2026-04-11 — Verification package: pytest + compose rebuild + `demo.sh`
+
+- **Stack commit:** `fa1d548` (`main`).
+- **Env:** `.env` + `.env.mws.local`; `docker compose -f infra/docker-compose.yml up -d --build` (образ `orchestrator` пересобран).
+- **Input:** (1) `cd apps/orchestrator && uv sync --extra dev && uv run pytest -q` (2) `./scripts/demo.sh` с `ORCHESTRATOR_URL=http://localhost:8089` и ключом из `.env` (тот же, что WebUI / `LITELLM_MASTER_KEY`).
+- **Result:** pytest **261 passed, 2 skipped**. `demo.sh` **PASS=13 FAIL=0 WARN=0** (полный прогон с WOW-1 + WOW-3, ~7 min; доминирует council).
+- **Notes:** Счётчик `PASS` в скрипте — число вызовов `ok` (сейчас **13**: два health-check, каталог моделей, два чека по тексту, URL, image, два по memory, два по classifier, council, PPTX). В старых журналах встречается **PASS=12** — это сдвиг счётчика/чеклиста, не регрессия. Memory remember+recall в этом прогоне **OK**. **Остатки для команды (без кода):** `ROADMAP.md` Step 6 (operator WebUI), Step 8 (demo-video), Step 9 (`demo-ready` + финальные артефакты).
+
 ## 2026-04-11 — Step 1 teardown legacy v3 stack
 
 - **Stack commit:** tag `smoke-green` on `main` (resolve SHA with `git rev-parse --short HEAD`)
@@ -82,6 +90,51 @@
   PDF and either confirm the chat response or capture the new error.
   Until that retry is recorded here, Row 6 Files remains formally
   blocked from `Implemented` in `FEATURE_MATRIX.md`.
+
+## 2026-04-12 16:08 — Step 7 WOW-3 PPTX live confirmation
+
+- **Stack commit:** `main` after PPTX CoT fix (orchestrator rebuilt with `--build`).
+- **Env:** `.env` + `.env.mws.local`; `pptx_plan_model=gpt-hub-strong` (default).
+- **Input:** Three curl requests against orchestrator `POST /v1/chat/completions`:
+  1. `"сделай презентацию про архитектуру RAG системы"` — natural language RU trigger
+  2. `"/pptx архитектура RAG системы"` — slash command
+  3. `"давай, в формате pptx будет? создай презентацию про AI"` — broadened pattern
+- **Model(s) used:** `gpt-hub-strong` (glm-4.6-357b) for slide plan; `gpt-hub-turbo` for fallback classification.
+- **Latency:** ~40 s per request (plan generation + retry).
+- **Result:** **OK (3/3 PASS)**. All three produced valid .pptx files.
+  - Request 1: "Архитектура RAG-систем" — 7 slides, 35 KB, download 200 OK.
+  - Request 3: "Искусственный интеллект: от теории к практике" — 6 slides, 34 KB.
+- **Trace highlights:** `short_circuit: "pptx_generation"`, `plan_model: "gpt-hub-strong"`, `slide_count: 7`.
+- **Notes:** Root cause of earlier failures: MWS `gpt-hub-strong` (glm-4.6-357b)
+  wraps all output in `<think>…</think>` Chinese CoT blocks before the actual JSON.
+  `_strip_cot_blocks()` added to `pptx_gen.py` — strips CoT before JSON parsing.
+  First plan attempt still sometimes fails (JSON comma delimiter errors inside
+  Chinese CoT braces); retry consistently succeeds after CoT strip. Also broadened
+  intent patterns to match «в формате pptx» and «формат pptx».
+  Download endpoint `GET /v1/files/pptx/{token}` confirmed: 200, correct MIME type,
+  valid PPTX file opens in PowerPoint. Row 14 (WOW-3) **confirmed live**.
+
+## 2026-04-12 16:07 — E2E simulation: text, image-gen, memory
+
+- **Stack commit:** `main` after PPTX CoT fix.
+- **Env:** `.env` + `.env.mws.local`.
+- **Input:** Curl requests:
+  1. `"Привет! Что такое RAG?"` — text chat
+  2. `"нарисуй кота в космосе"` — image generation
+  3. `"запомни: мой любимый язык программирования — Python"` — memory save
+  4. `"что ты помнишь?"` — memory recall
+- **Result:** **OK (4/4 PASS)**.
+  - Text: `gpt-hub-turbo` → 506-char RU response.
+  - Image: `qwen-image` → valid MWS image URL, inline markdown.
+  - Memory save: embedding took ~30 s (MWS `qwen3-embedding-8b` slow but works), fact stored.
+  - Memory recall: correctly returned 0 facts (different chat session = different user_id).
+- **Notes:** All short-circuits working: image_gen, memory_command. Row 1, 3, 9 confirmed.
+
+## 2026-04-11 — E2E simulation follow-up: memory save vs embedding latency
+
+- **Stack:** same as block above (`main` after PPTX CoT fix); orchestrator → MWS `qwen3-embedding-8b` for «запомни».
+- **Result (separate run):** text + image-gen + memory **recall** **PASS**; memory **save** → **ReadTimeout** on embedding HTTP client (MWS slow/unreachable/DNS from container — не детерминировано).
+- **Mitigation:** поднять `memory_embedding_timeout_seconds` (см. `settings.py` / env), проверить `POST /v1/embeddings` с хоста и **изнутри** `gpthub-prod-orchestrator` (`docker exec … curl`). Противоречит не «докам», а **флаппи MWS/сети**: см. успешный save ~30 s в блоке **2026-04-12 16:07** выше.
 
 ## 2026-04-11 11:46 — Step 5 full `demo.sh` (including WOW-1) end-to-end
 

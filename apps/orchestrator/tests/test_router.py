@@ -39,6 +39,7 @@ def test_router_doc_role():
     out = choose_model({"modalities": ["text"], "task_type": "summarization"}, s)
     assert out["model_role"] == "doc_synthesis"
     assert out["model_name"] == "gpt-hub-doc"
+    assert "gpt-hub-turbo" in out["fallback_aliases"]
 
 
 def test_router_code_local_preference():
@@ -46,6 +47,7 @@ def test_router_code_local_preference():
     out = choose_model({"modalities": ["text"], "task_type": "code_help"}, s)
     assert out["model_role"] == "reasoning_code_local"
     assert out["model_name"] == "gpt-hub-strong"
+    assert "gpt-hub-turbo" in out["fallback_aliases"]
 
 
 def test_router_code_openrouter_preference():

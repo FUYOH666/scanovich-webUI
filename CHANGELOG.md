@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- **PPTX plan model benchmark:** LiteLLM aliases `gpt-hub-pptx-llama33` →
+  `llama-3.3-70b-instruct` and `gpt-hub-pptx-qwen235a22` →
+  `Qwen3-235B-A22B-Instruct-2507-FP8` in [`infra/litellm/config.yaml`](infra/litellm/config.yaml);
+  script [`scripts/bench_pptx_plan_models.py`](scripts/bench_pptx_plan_models.py) runs the same
+  `request_slide_plan` + `build_pptx_from_plan` path as production, reports median
+  plan/build seconds per alias. Optional prod switch: `PPTX_PLAN_MODEL` env
+  (default remains `gpt-hub-strong`).
+- **Unit:** `tests/test_litellm_pptx_bench_aliases.py` asserts new YAML entries exist.
+
 ### Changed
 
 - **Docs (PPTX / test count):** `FEATURE_MATRIX.md` row 14 → **Implemented (WOW-3)**
@@ -10,10 +21,26 @@
   `README.md`, `ROADMAP.md` (§0.2 row 14, §0.3 scope, шаг 7, §0.6, Demo Lock, трек A),
   `docs/TEAM_BRIEF_RU.md`, `docs/NEW_CHAT_HANDOFF_RU.md`, `docs/LIVE_SMOKE.md`
   (устаревшие формулировки data-URI / «PPTX не реализован») — приведены к текущему коду.
-  Базовый счётчик на ветке с PPTX-пакетом: **226** тестов (`uv run pytest`);
-  после cherry-pick markitdown (`fa1d548`) смотри `uv run pytest` (в том коммите
-  заявлялось **255**).
+  Базовый счётчик на ветке с PPTX-пакетом: **226+** тестов (`uv run pytest`);
+  после markitdown и расширения набора смотри актуальный вывод pytest (в отдельных
+  коммитах фигурировали **255** / **261**).
   Пересобран `docs/submission/GPTHub_features_matrix.xlsx` из матрицы.
+- **Docs:** канон [`docs/MODEL_ROUTING_POLICY.md`](docs/MODEL_ROUTING_POLICY.md)
+  — baseline «alpha-first» и развитие политики ролей; **фактический** реестр —
+  `data/model_roles.yaml` (сейчас `version: 1`, цепочки как в файле, не как в черновике «v2»).
+- **PPTX JSON parsing:** устойчивость к prose после валидного top-level JSON
+  (`json.JSONDecoder().raw_decode`) в плане слайдов — см. `pptx/parse.py` и связанные пути;
+  упрощает бенчмарки и «болтливые» instruct-модели.
+- **Docs drift fix:** Row 9 memory test count (~30 в `test_memory_*.py`);
+  `LIVE_SMOKE.md` — ReadTimeout на MWS embeddings; `.env.example` —
+  `MEMORY_EMBEDDING_TIMEOUT_SECONDS` в блоке Embeddings.
+
+### Fixed
+
+- **PPTX plan JSON / MWS CoT:** где ответ модели содержит `<think>…`
+  до JSON, очистка перед парсингом (в т.ч. `pptx_gen.py` для альтернативных путей);
+  расширены паттерны intent («в формате pptx», «формат pptx»). Live-прогоны —
+  `docs/LIVE_SMOKE.md`.
 
 ### Added
 
