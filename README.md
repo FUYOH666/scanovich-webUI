@@ -56,8 +56,10 @@ Optional `rag` support is infrastructure for Open WebUI, not a second flagship p
 
 ## Current State
 
-This repo contains a runnable product spine with **255 passing unit +
-integration tests**. What's live in code right now:
+This repo contains a runnable product spine with **226+** unit +
+integration tests in `apps/orchestrator` (`uv run pytest`). История счётчика:
+**63 → 182 → 226+** (детали и волна markitdown — `CHANGELOG.md`, §Validation).
+What's live in code right now:
 
 - text chat through the orchestrator facade (row 1)
 - automatic + manual model choice via role-backed alias chain (rows 10, 11)
@@ -81,17 +83,15 @@ integration tests**. What's live in code right now:
 - voice chat through Open WebUI STT/TTS (row 2, UI-managed)
 - `X-GPTHub-Trace` with full routing / fallback / ingest observability (row 15)
 - optional embedding normalization for RAG mode (infra only)
-
-- **WOW-3 PPTX generation (row 14)** — «сделай презентацию / /pptx» →
-  `pptx_gen.py`: JSON slide plan via `gpt-hub-strong` (retry on parse
-  failure) → `python-pptx` deck build → download link via
-  `GET /v1/files/pptx/{token}`. 52 unit tests (`test_pptx_gen.py`).
-- web search through Open WebUI Tavily integration (row 7, UI-managed)
+- **WOW-3 PPTX (row 14)** — `task_type=pptx` → `gpthub_orchestrator/pptx/`:
+  parallel or monolithic slide-plan LLM (via LiteLLM / strong chain),
+  `python-pptx` deck build, markdown preview + **`GET /artifacts/pptx/{id}?token=…`**
+  download. **36** focused tests; see `FEATURE_MATRIX.md` and `docs/LIVE_SMOKE.md`.
 
 Still open inside the P0 scope:
 
-- operator-level live verification for rows 2, 4, 5, 6, 11 (Step 6);
-- demo video, final submission artifacts, `demo-ready` tag.
+- row 7 web search — needs `ENABLE_WEB_SEARCH=true` + `TAVILY_API_KEY` in env (Open WebUI);
+- operator live pass for the full WebUI checklist (voice, uploads, Tavily, PPTX link) — journal in `docs/LIVE_SMOKE.md`.
 
 All gaps and phases are tracked in `ROADMAP.md` (section 0) and
 `FEATURE_MATRIX.md`. Live model snapshot is in `docs/MWS_CATALOG.md`.
@@ -99,9 +99,7 @@ All gaps and phases are tracked in `ROADMAP.md` (section 0) and
 ## Author
 
 This repository is authored and maintained by **Aleksandr Mordvinov**
-([@FUYOH666](https://github.com/FUYOH666)). There are no other listed code
-contributors at this time; people invited on GitHub have repository access
-only. A short machine-readable list is in `AUTHORS.md`.
+([@FUYOH666](https://github.com/FUYOH666)). Contributor: **Usatov Pavel** (https://github.com/UsatovPavel) - pptx generation
 
 ## Read Next
 

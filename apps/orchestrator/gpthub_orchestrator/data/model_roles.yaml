@@ -1,0 +1,20 @@
+# Role → LiteLLM alias chains (see infra/litellm/config.yaml).
+version: 1
+roles:
+  fast_text_chat:
+    aliases: [gpt-hub-fast]
+  fast_text:
+    aliases: [gpt-hub-turbo, gpt-hub-fallback]
+  doc_synthesis:
+    aliases: [gpt-hub-doc, gpt-hub-turbo, gpt-hub-fallback]
+  reasoning_code_local:
+    aliases: [gpt-hub-strong, gpt-hub-turbo, gpt-hub-fallback]
+  reasoning_code_openrouter:
+    aliases: [gpt-hub-reasoning-or, gpt-hub-strong, gpt-hub-fallback]
+  vision_general:
+    aliases:
+      - gpt-hub-vision
+      - gpt-hub-vision-2
+      - gpt-hub-vision-3
+      - gpt-hub-vision-4
+      - gpt-hub-fallback

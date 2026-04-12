@@ -49,6 +49,16 @@ def test_extract_urls_dedup_and_limit():
     assert urls == ["https://x.test/1", "https://y.test/2"]
 
 
+def test_extract_urls_skips_pptx_artifact_download_links():
+    u = "http://host:8089/artifacts/pptx/48ac8b9ebefc?token=secret"
+    assert extract_urls_from_text(f"download {u}", limit=5) == []
+
+
+def test_extract_urls_mixed_skips_only_pptx_artifact():
+    text = "see https://example.com/a and http://x:8089/artifacts/pptx/id?token=t"
+    assert extract_urls_from_text(text, limit=5) == ["https://example.com/a"]
+
+
 def test_extract_urls_from_content_parts_list():
     content = [
         {"type": "text", "text": "check https://one.test"},
@@ -225,6 +235,28 @@ async def test_pipeline_noop_when_no_urls_and_no_files():
     settings = _mk_settings()
     messages = [{"role": "user", "content": "just a text question"}]
     async with httpx.AsyncClient() as http:
+        new_messages, artifacts, ms = await run_ingest_pipeline(messages, settings, http)
+    assert new_messages is messages
+    assert artifacts == []
+    assert ms is None
+
+
+@pytest.mark.asyncio
+async def test_pipeline_skips_pptx_artifact_url_no_http_fetch():
+    """One-time PPTX links must not be ingested — GET invalidates the token."""
+    settings = _mk_settings()
+
+    async def _boom(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError("ingest should not fetch pptx artifact URLs")
+
+    transport = httpx.MockTransport(_boom)
+    messages = [
+        {
+            "role": "user",
+            "content": "http://127.0.0.1:8089/artifacts/pptx/abc?token=t",
+        },
+    ]
+    async with httpx.AsyncClient(transport=transport) as http:
         new_messages, artifacts, ms = await run_ingest_pipeline(messages, settings, http)
     assert new_messages is messages
     assert artifacts == []

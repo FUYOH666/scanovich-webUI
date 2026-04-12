@@ -4,38 +4,25 @@
 
 ### Changed
 
-- **Docs:** full sync all canon docs (ROADMAP, README, TEAM_BRIEF_RU,
-  NEW_CHAT_HANDOFF_RU, FEATURE_MATRIX) with WOW-1 Council + WOW-3 PPTX
-  state, **234** tests, victory-plan step statuses (Steps 1–5 closed,
-  4/6/7 planned). Regenerated `docs/submission/GPTHub_features_matrix.xlsx`.
+- **Docs (PPTX / test count):** `FEATURE_MATRIX.md` row 14 → **Implemented (WOW-3)**
+  для пакета `gpthub_orchestrator/pptx/`, выдачи **`GET /artifacts/pptx/{id}?token=…`**,
+  порядка short-circuit (memory → council → image-gen → pptx) и **36** pptx-тестов;
+  `README.md`, `ROADMAP.md` (§0.2 row 14, §0.3 scope, шаг 7, §0.6, Demo Lock, трек A),
+  `docs/TEAM_BRIEF_RU.md`, `docs/NEW_CHAT_HANDOFF_RU.md`, `docs/LIVE_SMOKE.md`
+  (устаревшие формулировки data-URI / «PPTX не реализован») — приведены к текущему коду.
+  Базовый счётчик на ветке с PPTX-пакетом: **226** тестов (`uv run pytest`);
+  после cherry-pick markitdown (`fa1d548`) смотри `uv run pytest` (в том коммите
+  заявлялось **255**).
+  Пересобран `docs/submission/GPTHub_features_matrix.xlsx` из матрицы.
 
 ### Added
 
-- **Row 14 WOW-3 PPTX generation**: new
-  `apps/orchestrator/gpthub_orchestrator/pptx_gen.py` with RU/EN/slash
-  intent detection (`/pptx`, `/slides`, «сделай презентацию», «build a
-  deck»), JSON slide-plan request to `gpt-hub-strong` (glm-4.6-357b)
-  with one retry on parse failure, `python-pptx` deck builder (title +
-  bullet slides), file storage + unguessable-token download endpoint
-  `GET /v1/files/pptx/{token}`, OpenAI-compatible `chat.completion`
-  response with markdown download link. Classifier
-  `TaskType.PPTX_GENERATION`, router fallback, wired into `main.py`
-  between council and image-gen short-circuits. 52 unit tests in
-  `tests/test_pptx_gen.py` (intent detection, JSON parsing + fence
-  strip, plan validation including edge cases, python-pptx round-trip,
-  storage CRUD, mock LiteLLM plan request with retry, end-to-end
-  generation, response builders, classifier + router wiring). Settings:
-  `pptx_enabled`, `pptx_plan_model`, `pptx_plan_timeout_seconds`,
-  `pptx_plan_max_tokens`, `pptx_min_slides`, `pptx_max_slides`,
-  `pptx_storage_dir`, `pptx_public_base_url`. Row 14 moved from
-  `Deferred (wow candidate)` to `Implemented (WOW-3)` in
-  `FEATURE_MATRIX.md`.
 - **Row 6 DOCX/XLSX/PPTX support via markitdown**: new
   `apps/orchestrator/gpthub_orchestrator/ingest/richdoc.py` — detection
   by MIME + extension for `.docx/.xlsx/.pptx/.doc/.xls/.ppt/.rtf/.epub`,
   conversion via Microsoft `markitdown` library to markdown text, wired
-  into `ingest/pipeline.py` between PDF and plain-text routing. 21
-  tests in `tests/test_ingest_richdoc.py` (detection, real DOCX/XLSX/PPTX
+  into `ingest/pipeline.py` between PDF and plain-text routing. Tests in
+  `tests/test_ingest_richdoc.py` (detection, real DOCX/XLSX/PPTX
   round-trip, garbage fallback, empty rejection, pipeline routing).
 - **Row 7 Tavily web search**: env vars already in `.env` and
   `.env.example` (`ENABLE_WEB_SEARCH=true`, `WEB_SEARCH_ENGINE=tavily`,
@@ -199,14 +186,15 @@
 
 ### Validation
 
-- 63 → 255 tests passing (+171 new tests covering URL parsing, plain-text
+- 63 → **182** tests passing (+119 new tests covering URL parsing, plain-text
   ingest, ASR settings fallback, image generation intent and response
   shape, memory command parser, SQLite store CRUD + cosine search,
   MWS embeddings client, the end-to-end memory command executor with
-  MockTransport, the Expert Council fan-out / synthesis / fallback
-  / CoT-strip / classifier wiring, and PPTX intent detection / JSON plan
-  parsing / python-pptx builder / storage / end-to-end generation /
-  response builders / classifier + router wiring).
+  MockTransport, and the Expert Council fan-out / synthesis / fallback
+  / CoT-strip / classifier wiring).
+- Дальнейший рост набора: **226** тестов на PPTX-ветке (до markitdown);
+  после ingest **DOCX/XLSX/PPTX** через markitdown — снова `uv run pytest`
+  (в cherry-pick `fa1d548` фигурировало **255**).
 - MWS contracts directly probed with curl against `.env.mws.local`:
   - `POST /v1/chat/completions` with `mws-gpt-alpha` → 200 OK.
   - `POST /v1/images/generations` with `qwen-image` → 200 OK (URL + b64).
@@ -215,11 +203,14 @@
 
 ### Not yet done (tracked in ROADMAP section 0)
 
-- Operator-level live verification for rows 2, 4, 5, 6, 11 (Step 6).
+- Row 7: enable Open WebUI Tavily web search via env.
+- Operator live checklist (WebUI voice, uploads, Tavily, manual model row11, PPTX link) — журнал `docs/LIVE_SMOKE.md`.
+- Live E2E smoke through the docker stack (blocked on stopping the old
+  `gpthub-v3-*` stack that holds ports 3000/4000/8089).
 - Architecture diagram PNG/SVG.
 - Demo video 2–3 minutes.
-- Presentation deck finalization.
-- git tag `demo-ready`.
+- Filled `GPTHub шаблон фич.xlsx`.
+- Presentation deck.
 
 ## [earlier]
 

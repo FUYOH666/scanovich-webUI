@@ -90,7 +90,7 @@
 - **Input:** `./scripts/demo.sh` (no `--skip-wow`). Steps 1–7 hit the P0 baseline; step 8 sends `/research ... корпоративные RAG` via curl; step 9 sends the PPTX prompt.
 - **Model(s) used:** Row 1 → `gpt-hub-turbo`; Row 8 URL → alpha; Row 3 image → `qwen-image`; Row 9 memory → `qwen3-embedding-8b` + alpha; Row 10 classifier → alpha; Step 8 council → 3 experts + `gpt-hub-strong` synthesis.
 - **Latency:** full run dominated by council (~171 s). Total end-to-end ≈ 3.5 min.
-- **Result:** **PASS=12 FAIL=0 WARN=1**. The sole WARN is expected: WOW-3 PPTX (row 14, not yet implemented — `demo.sh` just sees a plain chat reply instead of a `.pptx` artifact).
+- **Result:** **PASS=12 FAIL=0 WARN=1**. Исторический WARN относится к прогону **до** финального PPTX short-circuit: шаг 9 `demo.sh` не проверял markdown + **`GET /artifacts/pptx/…`**. Текущий код — `gpthub_orchestrator/pptx/` (см. `FEATURE_MATRIX.md` row 14); для закрытия ряда в матрице нужен отдельный live-прогон с кликом по ссылке скачивания.
 - **Trace highlights:** `X-GPTHub-Trace` present on every row; council path returned a valid OpenAI-compatible `chat.completion` with the synthesized answer (curl path in step 8 is unbounded and waits out the full 171 s).
 - **Notes:** Confirms the council code in the live container works inside the automated smoke, not just the manual `POST /v1/chat/completions` from 11:32. `wow/expert-council` is green end-to-end through docker; the only remaining WARN is a known-unmerged wow-candidate. Clears the ROADMAP §0.4 rule «merge `wow/expert-council` only after green end-to-end through WebUI».
 
@@ -145,12 +145,71 @@
 - **Trace highlights:** Row1/8/10 returned `X-GPTHub-Trace`; memory remember/recall OK.
 - **Notes:** Fixed orchestrator bug where image-intent block shadowed `last_user_text()` helper ([`main.py`](../apps/orchestrator/gpthub_orchestrator/main.py) rename to `image_intent_user_text`). **WebUI manual Demo Lock chunk** (текст + PDF + «нарисуй кота» в браузере) — оператор должен прогнать отдельно; здесь зафиксированы compose + health + `demo.sh` как автоматический baseline.
 
+## 2026-04-11 — Step 1 WebUI smoke (текст + PDF + картинка), ROADMAP §0.4
+
+- **Stack commit:** `647d49d`
+- **Env:** `docker compose -f infra/docker-compose.yml`; Open WebUI `http://localhost:3000`; `.env` / `.env.mws.local` как в рабочем прогоне (секреты не логируем).
+- **Input:** (1) текстовый вопрос в чате — ответ получен; (2) запрос на генерацию картинки (в духе «нарисуй кота») — картинка сгенерировалась; (3) PDF с вопросом — **ошибка**, чтение/ингест PDF не прошёл.
+- **Model(s) used:** _по UI/trace не выписывались в этой записи_
+- **Latency:** _—_
+- **Result:** **PARTIAL** — текст и image-gen OK; PDF — **FAIL** (см. ниже), при этом сессия в WebUI продолжает работать.
+- **Trace highlights:** _—_
+- **Notes:** Сообщение об ошибке при работе с PDF: `'NoneType' object has no attribute 'encode'`. Нужен отдельный разбор (Open WebUI vs orchestrator ingest). Скрин источника:
+
+![Step 1 WebUI smoke 2026-04-11](./sources/0.4.%20smoke-test-11.04-UI.png)
+
+## 2026-04-11 — Step 1 WebUI RAG smoke (PDF + retrieval), post-fix
+
+- **Stack commit:** _—_ (актуальный SHA: `git -C scanovich-webUI rev-parse --short HEAD`)
+- **Env:** `docker compose -f infra/docker-compose.yml --profile rag up -d --build`; `.env` + `.env.mws.local` (секреты не логируем). WebUI: `RAG_EMBEDDING_ENGINE=openai`, `RAG_OPENAI_API_BASE_URL=http://embedding-shim:8000/v1`, `RAG_EMBEDDING_MODEL=qwen3-embedding-8b`, `RAG_OPENAI_API_KEY` — тот же Bearer, что для MWS (`MWS_GPT_API_KEY`). Shim: `BGE_EMBEDDING_UPSTREAM=https://api.gpt.mws.ru` **или** только `MWS_GPT_API_BASE` в mws.local (без дубля `/v1/v1` в пути к `/embeddings`).
+- **Input:** PDF в чат (`Large_Language_Model-Based_Agents_for_Software_Eng.pdf` или аналог); запрос summary / ключевые пункты / анализ (RU/EN).
+- **Model(s) used:** чат — модель из UI (например `gpt-hub`); эмбеддинги — `qwen3-embedding-8b` через `embedding-shim` → MWS `POST /v1/embeddings`.
+- **Latency:** _не замеряли_
+- **Result:** **OK**
+- **Trace highlights:** В логах контейнера WebUI: `open_webui.retrieval.utils:query_doc` / `query_doc:result` — списки id чанков и метаданные PDF (`embedding_config` с `openai` + `qwen3-embedding-8b`). В UI: «Найден 1 источник», ответ с привязкой к файлу.
+- **Notes:** Закрывает PDF-часть после исторического **PARTIAL** (ошибка `'NoneType' object has no attribute 'encode'` без `RAG_EMBEDDING_ENGINE=openai` и до выравнивания upstream URL/ключа для шима). В `apps/embedding_shim/main.py`: нормализация URL (`…/v1` vs корень), опциональный `env_file` `.env.mws.local` в compose, прокси без «грязного» логирования тел ответов. Скрин этой итерации при желании добавить в `docs/sources/` отдельным файлом.
+
+## 2026-04-11 — PPTX smoke (WebUI + orchestrator)
+
+- **Stack commit:** _—_ (актуальный SHA: `git -C scanovich-webUI rev-parse --short HEAD`)
+- **Env:** как в **Step 1 WebUI RAG smoke** (`--profile rag`, `embedding-shim`, `.env` + `.env.mws.local`); WebUI модель `gpt-hub`; оркестратор `pptx_gen_enabled` по умолчанию вкл.
+- **Input:** (1) только текст: «Сгенерируй презентацию по теме природа»; (2) PDF в чат (`Large_Language_Model-Based_Agents_for_Software_Eng.pdf` или аналог), затем «Сгенерируй презентацию… проблематике данной статьи» в той же ветке после (1).
+- **Model(s) used:** UI — `gpt-hub`; по `X-GPTHub-Trace` / `execution_trace`: `task_type: pptx`, router `reason: pptx_slide_plan_json`, роль `reasoning_code_local`, цепочка с `gpt-hub-strong`.
+- **Latency:** ~**30000–50000 ms** на один вызов LiteLLM под JSON-план слайдов (по меткам времени в логе между classify и ответом).
+- **Result:** **PARTIAL** — (1) **OK** (превью + `.pptx` по data URI); (2) содержание статьи в слайдах не отражено, в UI «Источники не найдены».
+- **Trace highlights:** оркестратор: `pptx: {status: ok, slides: N}`, `attachments_detected: ["text"]`, `artifacts: []`. WebUI: ingest PDF (`application/pdf`, `save_docs_to_vector_db`, коллекция с сотнями чанков); ошибка **`502`** на `http://embedding-shim:8000/v1/embeddings` в `get_sources_from_items` (см. лог).
+- **Notes:** Снимок стека: [`logs/compose-20260411-144332.log`](../logs/compose-20260411-144332.log) (`make docker-logs-save`). План PPTX собирается из текста `messages` без парсинга PDF на стороне оркестратора; для (2) нужны подмешанные RAG-источники и стабильный `embedding-shim`.
+
+## 2026-04-11 20:13 — PPTX на Cloud VM (тайминги, артефакт, ingest)
+
+- **Stack commit:** `3e9aa55` (`97dbcaf36e8c4123dd940519cb331e3eea5352d7`)
+- **Env:** VM публичный `178.154.209.51`; `docker compose -f infra/docker-compose.yml --profile rag`; `.env` + `.env.mws.local`; orchestrator published **8089:8000**; `PPTX_ARTIFACTS_PUBLIC_BASE_URL=http://178.154.209.51:8089` (без trailing slash); контейнер `gpthub-prod-orchestrator` перезапущен ~20:12 UTC по логам.
+- **Input:** Open WebUI — запрос на презентацию (~9 слайдов); второй запрос в той же сессии (продолжение диалога).
+- **Model(s) used:** видимая `gpt-hub`; router `gpt-hub-strong`, роль `reasoning_code_local`; `task_type` / classifier `pptx` (см. `execution_trace` / `X-GPTHub-Trace`).
+- **Latency:** первый полный цикл — `plan_total_ms` **54225** ms, `build_deck_ms` **205** ms; от `POST /api/chat/completions` до `POST /api/chat/completed` в WebUI **55000** ms (~55 s); второй PPTX подряд — `plan_total_ms` **12645** ms, `build_deck_ms` **232** ms.
+- **Result:** **OK** по генерации и скачиванию после разбора 404; отдельно зафиксирован диагностический **FAIL-паттерн** «ссылка на `.pptx` сразу даёт 404» до фикса ingest.
+- **Trace highlights:** `pptx_timing` с **`concurrency: 7`**, 9 слайдов; `pptx: {"status": "ok", "slides": 9}`; при сбое артефакта в логах orchestrator: `httpx GET` на тот же URL артефакта → **200** и `url_ingest_failed … unsupported content-type: application/vnd.openxmlformats-officedocument.presentationml.presentation`, затем клиентский `GET` → `pptx_artifact_miss` / **404**.
+- **Notes:** 404 был не из‑за Security Group: ответ шёл от `uvicorn`. Одноразовый токен снимал **ingest URL** из текста (ответ ассистента с ссылкой «Скачать»). Исправление в репозитории: не добавлять в инжест URL с путём `/artifacts/pptx/` (`ingest/url_fetch.py`). Успешное скачивание на том же стенде: `GET /artifacts/pptx/...` **200** с внешнего клиента для нового `artifact_id`.
+
+## 2026-04-11 13:50 — PPTX «природа», smoke ~40 с (разбор таймингов)
+
+> Ориентир по времени: **13:50** МСК; в логах оркестратора тот же прогон — **10:54:40** UTC → **10:55:23** UTC (`execution_trace` с `"slides": 9`). Детализация фаз — в `out.txt` (корень рабочей копии).
+
+- **Stack commit:** _—_ (сверить `git rev-parse --short HEAD`)
+- **Env:** тот же стек, что и соседние PPTX-записи (WebUI + orchestrator, `pptx_parallel_slide_agents_enabled`).
+- **Input:** текстовый запрос на презентацию по теме **«природа»**, **9 слайдов** в плане (parallel slide-agents).
+- **Model(s) used:** по trace — `task_type: pptx`, цепочка strong / slide-plan (как в других PPTX smoke).
+- **Latency:** `plan_outline_llm_ms` **~3169** ms; **стена slide-agents** `plan_slide_agents_ms` **~39 592** ms (**~39,6 с**); `plan_total_ms` **~42 763** ms (**~42,8 с**); `build_deck_ms` **~254** ms. Узкое место — **один** самый долгий per-slide LLM (**~39 592** ms), почти равный wall параллельного блока.
+- **Result:** **OK** по end-to-end генерации; субъективно «~40 с» на план совпадает с доминированием блока slide-agents.
+- **Trace highlights:** 9× `pptx_slide_agent_done`; max на слайде с заголовком в духе «Экосистемы и их разнообразие» (~**39,6 с**), остальные короче.
+- **Notes:** **Титульный / вводный слайд в деке есть** — проблема качества/скорости не в отсутствии титульника и не в `python-pptx` (**~0,25 с** на сборку), а в **overhead на тексте слайдов**: параллельные агенты упираются в **самый медленный** вызов LLM на одном слайде. Для сравнения второй крупный прогон в том же логе («океан», 10 слайдов) — wall slide-agents **~17,5 с**, `plan_total_ms` **~21,2 с** (`out.txt`).
+
 ---
 
 ## Шаг 1 — Docker bring-up (чеклист ROADMAP §0.4)
 
-Сводка: три журнальных записи выше закрывают teardown / compose / health+curl.
-Дополнительно вручную: три сценария **через WebUI** (текст, PDF+вопрос, image prompt) — перенести в отдельные записи шага 2 при первом полном P0-прогоне.
+Сводка: записи выше закрывают teardown / compose / health+curl; **«Step 1 WebUI smoke»** — исторический **PARTIAL** (PDF без RAG); **«Step 1 WebUI RAG smoke»** — тот же сценарий PDF в браузере с профилем **`rag`** и настройкой эмбеддингов (**OK**).
+Дополнительно: при полном P0-прогоне детализировать ряды 1–12 в секции шага 2 ниже.
 
 ---
 

@@ -138,6 +138,86 @@ class Settings(BaseSettings):
         description="MWS image model id used for /images/generations short-circuit.",
     )
     image_gen_timeout_seconds: float = Field(default=120.0, ge=5.0, le=600.0)
+    pptx_gen_enabled: bool = Field(
+        default=True,
+        description="If true, task_type pptx short-circuits to slide-plan LLM + python-pptx deck.",
+    )
+    pptx_plan_timeout_seconds: float = Field(
+        default=300.0,
+        ge=15.0,
+        le=600.0,
+        description="Wall-clock limit for plan LLM + deck build in PPTX short-circuit.",
+    )
+    pptx_parallel_slide_agents_enabled: bool = Field(
+        default=True,
+        description=(
+            "If true, first LLM call returns slide titles/outline only, then one LiteLLM call per slide "
+            "in parallel (bounded by pptx_slide_agents_concurrency)."
+        ),
+    )
+    pptx_slide_agents_concurrency: int = Field(
+        default=7,
+        ge=1,
+        le=32,
+        description="Max concurrent per-slide LLM calls when pptx_parallel_slide_agents_enabled.",
+    )
+    pptx_max_slides: int = Field(
+        default=10,
+        ge=1,
+        le=10,
+        description="Cap on slide count after outline/monolithic (must be ≤ MAX_SLIDES in pptx/schema).",
+    )
+    pptx_intro_slide_enabled: bool = Field(
+        default=True,
+        description="If true, prepend a title/intro slide (topic from first planned slide); layout is probed separately.",
+    )
+    pptx_plan_tone: str = Field(
+        default="auto",
+        description="Tone hint for slide-plan LLM (auto|general|persuasive|inspiring|instructive|engaging).",
+    )
+    pptx_plan_audience: str = Field(
+        default="auto",
+        description="Audience hint for slide-plan LLM (auto|general|business|investor|teacher|student).",
+    )
+    pptx_plan_scenario: str = Field(
+        default="auto",
+        description=(
+            "Scenario hint for slide-plan LLM "
+            "(auto|general|analysis-report|teaching-training|promotional-materials|public-speeches)."
+        ),
+    )
+    pptx_plan_text_content: Literal["minimal", "concise", "detailed", "extensive"] = Field(
+        default="concise",
+        description="Target verbosity for bullets/slide text in PPTX plan (presentation-ai style).",
+    )
+    pptx_asset_templates_enabled: bool = Field(
+        default=True,
+        description="If true, use .pptx files from pptx_templates_dir or built-in assets/pttx paths.",
+    )
+    pptx_templates_dir: str = Field(
+        default="",
+        description="Override directory of .pptx templates; empty = auto (/app/assets/pttx or repo assets/pttx).",
+    )
+    pptx_template_index: int = Field(
+        default=0,
+        ge=0,
+        le=64,
+        description="Pick template from sorted *.pptx in directory (index wraps modulo file count).",
+    )
+    pptx_artifacts_public_base_url: str = Field(
+        default="",
+        description=(
+            "Public base URL for PPTX download links (no trailing slash), e.g. http://YOUR_HOST:8089. "
+            "Browsers must reach this host; inside Docker use published orchestrator port. "
+            "If empty, the request Host from chat/completions is used (often only works with port-forward)."
+        ),
+    )
+    pptx_artifact_ttl_seconds: float = Field(
+        default=3600.0,
+        ge=60.0,
+        le=86400.0,
+        description="TTL for one-time PPTX artifact tokens (monotonic clock).",
+    )
     memory_enabled: bool = Field(
         default=True,
         description="If true, orchestrator detects memory commands and injects retrieved facts.",

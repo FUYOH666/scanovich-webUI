@@ -23,6 +23,15 @@ _URL_RE = re.compile(r"https?://[^\s<>\"'`]+", re.IGNORECASE)
 _TRAILING_PUNCT = ".,;:!?)]}>\u2019\u201d"
 
 
+def _is_pptx_artifact_download_url(url: str) -> bool:
+    """GET on these URLs consumes a one-time token (see main.download_pptx_artifact)."""
+    try:
+        parsed = urlparse(url.strip())
+        return "/artifacts/pptx/" in (parsed.path or "").lower()
+    except Exception:
+        return False
+
+
 class UrlFetchError(Exception):
     pass
 
@@ -42,6 +51,8 @@ def extract_urls_from_text(text: str, *, limit: int) -> list[str]:
     out: list[str] = []
     for raw in _URL_RE.findall(text):
         cleaned = raw.rstrip(_TRAILING_PUNCT)
+        if _is_pptx_artifact_download_url(cleaned):
+            continue
         if cleaned in seen:
             continue
         seen.add(cleaned)
