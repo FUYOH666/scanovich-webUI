@@ -45,21 +45,8 @@ _PREFERRED_LAYOUT_NAME_PARTS: tuple[str, ...] = (
     "CUSTOM",
 )
 
-# Title / section-style layouts first for the optional intro slide (no bullets).
-_INTRO_LAYOUT_NAME_PARTS: tuple[str, ...] = (
-    "TITLE_ONLY",
-    "TITLE",
-    "SECTION_HEADER",
-    "SECTION_TITLE",
-    "CAPTION",
-    "BIG_NUMBER",
-    "TITLE_AND_BODY",
-    "MAIN_POINT",
-    "ONE_COLUMN",
-    "TWO_COLUMN",
-    "BLANK",
-    "CUSTOM",
-)
+# Титульный слайд (intro): всегда первый master layout в выбранном .pptx из assets — без probe и без участия LLM.
+_INTRO_SLIDE_LAYOUT_INDEX = 0
 
 
 def deck_title_for_intro(plan: SlidePlan) -> str:
@@ -246,6 +233,19 @@ def _probe_first_layout_index(
     raise PptxGenError("pptx_no_layout")
 
 
+def _add_intro_slide_asset_layout(prs: Presentation, spec: SlideSpec) -> None:
+    n = len(prs.slide_layouts)
+    idx = _INTRO_SLIDE_LAYOUT_INDEX
+    if idx < 0 or idx >= n:
+        raise PptxGenError("pptx_intro_layout_index_invalid")
+    slide = prs.slides.add_slide(prs.slide_layouts[idx])
+    try:
+        _apply_spec_to_slide(slide, spec)
+    except (PptxGenError, AttributeError, IndexError, KeyError, ValueError) as e:
+        _delete_last_slide(prs)
+        raise PptxGenError("pptx_intro_layout_apply_failed") from e
+
+
 def load_stripped_base_presentation(settings: Settings) -> Presentation:
     """Open template (or blank), remove all slides; ready for slide loop. I/O + parse — overlap with LLM."""
     path = _pick_template_path(settings)
@@ -300,9 +300,10 @@ def build_pptx_from_plan(
 
     try:
         for i, spec in enumerate(specs):
-            intro = settings.pptx_intro_slide_enabled and i == 0
-            preferred = _INTRO_LAYOUT_NAME_PARTS if intro else None
-            _probe_first_layout_index(prs, spec, preferred_name_parts=preferred)
+            if settings.pptx_intro_slide_enabled and i == 0:
+                _add_intro_slide_asset_layout(prs, spec)
+            else:
+                _probe_first_layout_index(prs, spec, preferred_name_parts=None)
     except IndexError as e:
         raise PptxGenError("pptx_no_layout") from e
 
