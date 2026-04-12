@@ -43,16 +43,17 @@ PDF/текстовые файлы, картинку, аудио и URL; orchestr
 
 | Row | Feature | Status |
 |---|---|---|
-| 1 | Текстовый чат | Implemented (код + тесты; `demo.sh` PASS — см. `LIVE_SMOKE.md`) |
-| 2 | Голосовой чат | Implemented (UI-managed STT/TTS Open WebUI) |
-| 3 | Генерация изображений | **Implemented** (`image_gen.py` → MWS `qwen-image`) |
-| 4 | Аудио + ASR | **Implemented** (ASR fallback → MWS `whisper-medium`) |
-| 5 | Изображения (VLM) | Implemented (код + тесты; нужен live smoke) |
-| 6 | Файлы | **Implemented** (PDF + TXT/MD/JSON/code ≈30 расширений) |
-| 7 | Поиск в интернете | **Implemented** (env + admin; per-chat глобус в WebUI — см. `ROADMAP.md` шаг 4) |
-| 8 | Веб-парсинг URL | **Implemented** (`ingest/url_fetch.py`, SSRF, 12 тестов) |
-| 9 | Долгосрочная память | **Implemented** (SQLite + `qwen3-embedding-8b`, commands «запомни / забудь / что ты помнишь») |
-| 10 | Автовыбор модели | Implemented |
+| 1 | Текстовый чат | **Implemented** (код + тесты; `demo.sh` PASS — см. `LIVE_SMOKE.md` 2026-04-11) |
+| 2 | Голосовой чат | Implemented (UI-managed STT/TTS; нужен живой micro-демо) |
+| 3 | Генерация изображений | **Implemented** (`image_gen.py` → MWS `qwen-image`; live PASS в `demo.sh`) |
+| 4 | Аудио + ASR | **Implemented** (ASR → MWS `whisper-medium`; нужен live `.wav` upload) |
+| 5 | Изображения (VLM) | Implemented (код + тесты; нужен live smoke с фото) |
+| 6 | Файлы | **Implemented** (PDF + rich formats через markitdown + plain text, примерно 30 расширений); **fix 2026-04-12:** `BYPASS_EMBEDDING_AND_RETRIEVAL=true` против краша WebUI на PDF — см. `LIVE_SMOKE.md` |
+| 7 | Поиск в интернете | **Implemented** (`ENABLE_WEB_SEARCH` + Tavily + при необходимости **`BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL`**; панель Sources может расходиться с ответом — см. `LIVE_SMOKE.md`, `ROADMAP.md` шаг 4) |
+| 8 | Веб-парсинг URL | **Implemented** (`ingest/url_fetch.py`, SSRF, 12 тестов; live PASS в `demo.sh`) |
+| 9 | Долгосрочная память | **Implemented** (SQLite + `qwen3-embedding-8b`; live PASS в `demo.sh`; см. ReadTimeout в `LIVE_SMOKE.md`) |
+| 10 | Автовыбор модели | **Implemented** (live trace в `demo.sh`; реестр v1 — `model_roles.yaml`) |
+
 | 11 | Ручной выбор модели | Implemented (нужен демо-режим с dropdown) |
 | 12 | Markdown / код | Implemented |
 

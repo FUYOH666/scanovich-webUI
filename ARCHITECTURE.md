@@ -15,6 +15,14 @@ That path is the product. Everything else in the repo is supporting infrastructu
 - User-facing chat surface.
 - Sends OpenAI-compatible requests to the orchestrator.
 - Can optionally use the embedding shim when the `rag` profile is enabled.
+- **Web search (Tavily)** runs inside WebUI before the chat request is sent
+  upstream: snippets are merged into the outgoing messages. The
+  orchestrator does not call Tavily; it only sees the enriched payload.
+  With **`BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=true`** (repo default),
+  WebUI skips indexing those snippets into its vector DB. The model can
+  still answer from inlined search text while the **Sources** side panel
+  may show an empty or inconsistent state, because that UI often expects
+  structured retrieval metadata from the skipped path.
 
 ### Orchestrator
 

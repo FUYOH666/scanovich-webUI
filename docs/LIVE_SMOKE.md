@@ -91,6 +91,37 @@
   Until that retry is recorded here, Row 6 Files remains formally
   blocked from `Implemented` in `FEATURE_MATRIX.md`.
 
+## 2026-04-12 — Row 7 Web search: «Источники не найдены» / model denies internet
+
+- **Stack:** `gpthub-prod-open-webui` v0.8.12; `ENABLE_WEB_SEARCH=true`, Tavily OK in logs.
+- **Symptom:** UI shows web search ON; gray **«Источники не найдены»**; assistant says it has no direct internet access.
+- **Root cause:** after Tavily, WebUI runs **`save_docs_to_vector_db`** / web-search chunk indexing and calls
+  **`embedding_function.encode`** while **`embedding_function` is `None`** (same class of bug as Row 6 PDF).
+  File uploads use `BYPASS_EMBEDDING_AND_RETRIEVAL`; web search has a **separate** flag
+  **`BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL`** (`config.py` PersistentConfig).
+- **Fix:** set **`BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=true`** in `.env` (see `.env.example`) **or**
+  Admin → Settings → Web Search → enable **«Обход встраивания и извлечения данных»** for web search,
+  then `docker compose -f infra/docker-compose.yml up -d --force-recreate open-webui`.
+  If the value was persisted earlier in the DB, use Admin UI or `ENABLE_PERSISTENT_CONFIG=false` per Open WebUI docs.
+- **Status:** bypass env live in container; operator smoke ongoing.
+
+### 2026-04-12 — Row 7 follow-up: «6 источников» → «источники не найдены», ответ с новостями есть
+
+- **Observed:** статус сначала показывает ненулевое число источников (напр. 6), затем
+  **«Источники не найдены»**, при этом ассистент выдаёт актуальные формулировки по теме
+  (напр. новости rbk.ru).
+- **Interpretation (stack):** Tavily + инъекция сниппетов в исходящие `messages` к
+  orchestrator работают; **orchestrator / LiteLLM / MWS не управляют** панелью источников
+  WebUI. При **`BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL`** WebUI **не** кладёт
+  web-сниппеты в свою vector-коллекцию; блок UI «источники» часто строится из
+  **другого** шага (структурированные `source` / retrieval после индексации). Итог:
+  **рассинхрон числа/плашки и фактического ответа — ожидаемая особенность UX**, не баг
+  GPTHub-spine. Критерий работоспособности ряда 7: **содержание ответа опирается на
+  поиск**, а не зелёность панели цитат.
+- **If you need pretty citations:** либо поднять полноценный WebUI RAG + embedding
+  (отдельное решение, дублирует политику «ingest в orchestrator»), либо жить с bypass
+  и ориентироваться на текст ответа / ссылки внутри `content`, если модель их цитирует.
+
 ## 2026-04-12 16:08 — Step 7 WOW-3 PPTX live confirmation
 
 - **Stack commit:** `main` after PPTX CoT fix (orchestrator rebuilt with `--build`).

@@ -97,7 +97,9 @@ What's live in code right now:
   `python-pptx` deck build, markdown preview + **`GET /artifacts/pptx/{id}?token=…`**
   download; опционально бенчмарк алиасов `gpt-hub-pptx-*` — `scripts/bench_pptx_plan_models.py`.
   **36** focused tests; см. `FEATURE_MATRIX.md`, `docs/LIVE_SMOKE.md`.
-- **Web search (row 7)** — Open WebUI + Tavily при `ENABLE_WEB_SEARCH=true` и ключе (UI-managed).
+- **Web search (row 7)** — Open WebUI + Tavily при `ENABLE_WEB_SEARCH=true` и ключе (UI-managed);
+  при `BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=true` панель **Sources** в WebUI может не совпадать
+  с вставленными в ответ фрагментами — см. `FEATURE_MATRIX.md`, `docs/LIVE_SMOKE.md`.
 
 Still open inside the P0 scope:
 
