@@ -94,9 +94,7 @@ All gaps and phases are tracked in `ROADMAP.md` (section 0) and
 ## Author
 
 This repository is authored and maintained by **Aleksandr Mordvinov**
-([@FUYOH666](https://github.com/FUYOH666)). There are no other listed code
-contributors at this time; people invited on GitHub have repository access
-only. A short machine-readable list is in `AUTHORS.md`.
+([@FUYOH666](https://github.com/FUYOH666)). Contributor: **Usatov Pavel** (https://github.com/UsatovPavel) - pptx generation
 
 ## Read Next
 

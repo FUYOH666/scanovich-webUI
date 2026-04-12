@@ -146,6 +146,17 @@
 - **Trace highlights:** оркестратор: `pptx: {status: ok, slides: N}`, `attachments_detected: ["text"]`, `artifacts: []`. WebUI: ingest PDF (`application/pdf`, `save_docs_to_vector_db`, коллекция с сотнями чанков); ошибка **`502`** на `http://embedding-shim:8000/v1/embeddings` в `get_sources_from_items` (см. лог).
 - **Notes:** Снимок стека: [`logs/compose-20260411-144332.log`](../logs/compose-20260411-144332.log) (`make docker-logs-save`). План PPTX собирается из текста `messages` без парсинга PDF на стороне оркестратора; для (2) нужны подмешанные RAG-источники и стабильный `embedding-shim`.
 
+## 2026-04-11 20:13 — PPTX на Cloud VM (тайминги, артефакт, ingest)
+
+- **Stack commit:** `3e9aa55` (`97dbcaf36e8c4123dd940519cb331e3eea5352d7`)
+- **Env:** VM публичный `178.154.209.51`; `docker compose -f infra/docker-compose.yml --profile rag`; `.env` + `.env.mws.local`; orchestrator published **8089:8000**; `PPTX_ARTIFACTS_PUBLIC_BASE_URL=http://178.154.209.51:8089` (без trailing slash); контейнер `gpthub-prod-orchestrator` перезапущен ~20:12 UTC по логам.
+- **Input:** Open WebUI — запрос на презентацию (~9 слайдов); второй запрос в той же сессии (продолжение диалога).
+- **Model(s) used:** видимая `gpt-hub`; router `gpt-hub-strong`, роль `reasoning_code_local`; `task_type` / classifier `pptx` (см. `execution_trace` / `X-GPTHub-Trace`).
+- **Latency:** первый полный цикл — `plan_total_ms` **54225** ms, `build_deck_ms` **205** ms; от `POST /api/chat/completions` до `POST /api/chat/completed` в WebUI **55000** ms (~55 s); второй PPTX подряд — `plan_total_ms` **12645** ms, `build_deck_ms` **232** ms.
+- **Result:** **OK** по генерации и скачиванию после разбора 404; отдельно зафиксирован диагностический **FAIL-паттерн** «ссылка на `.pptx` сразу даёт 404» до фикса ingest.
+- **Trace highlights:** `pptx_timing` с **`concurrency: 7`**, 9 слайдов; `pptx: {"status": "ok", "slides": 9}`; при сбое артефакта в логах orchestrator: `httpx GET` на тот же URL артефакта → **200** и `url_ingest_failed … unsupported content-type: application/vnd.openxmlformats-officedocument.presentationml.presentation`, затем клиентский `GET` → `pptx_artifact_miss` / **404**.
+- **Notes:** 404 был не из‑за Security Group: ответ шёл от `uvicorn`. Одноразовый токен снимал **ingest URL** из текста (ответ ассистента с ссылкой «Скачать»). Исправление в репозитории: не добавлять в инжест URL с путём `/artifacts/pptx/` (`ingest/url_fetch.py`). Успешное скачивание на том же стенде: `GET /artifacts/pptx/...` **200** с внешнего клиента для нового `artifact_id`.
+
 ---
 
 ## Шаг 1 — Docker bring-up (чеклист ROADMAP §0.4)
