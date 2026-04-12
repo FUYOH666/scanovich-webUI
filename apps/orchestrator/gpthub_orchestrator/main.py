@@ -10,7 +10,7 @@ from typing import Annotated, Any
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from gpthub_orchestrator.classifier import classify_messages
 from gpthub_orchestrator.clock_context import build_session_clock_block
@@ -34,6 +34,16 @@ from gpthub_orchestrator.image_gen import (
     extract_image_prompt,
     generate_image_via_mws,
     is_image_generation_request,
+)
+from gpthub_orchestrator.pptx_gen import (
+    PptxPlanError,
+    build_pptx_chat_completion,
+    build_pptx_message_text,
+    build_pptx_sse_chunks,
+    extract_pptx_topic,
+    is_pptx_request,
+    resolve_pptx_path,
+    run_pptx_generation,
 )
 from gpthub_orchestrator.memory.service import (
     build_memory_chat_completion,
@@ -178,6 +188,30 @@ async def readyz(
         logger.warning("readyz_litellm_bad_status %s", r.status_code)
         raise HTTPException(status_code=503, detail="LiteLLM not ready")
     return {"status": "ready", "service": "gpthub-orchestrator", "litellm": "ok"}
+
+
+@app.get("/v1/files/pptx/{token}")
+async def download_pptx(
+    token: str,
+    settings: Settings = Depends(get_settings),
+) -> FileResponse:
+    """Public download endpoint for generated .pptx files (no auth).
+
+    The orchestrator-side PPTX short-circuit returns markdown links that
+    point here so the user's browser can fetch them with one click. Tokens
+    are 32-char UUID4 hex; the file lives in ``settings.pptx_storage_dir``
+    until container restart. Unauthenticated by design — the token is the
+    capability — so we never accept anything that does not match the safe
+    token regex.
+    """
+    path = resolve_pptx_path(token, settings=settings)
+    if path is None:
+        raise HTTPException(status_code=404, detail="pptx not found")
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        filename=f"GPTHub_presentation_{token[:8]}.pptx",
+    )
 
 
 @app.get("/v1/models")
@@ -355,6 +389,66 @@ async def chat_completions(
                     model_label=model_vis,
                     text=council_result.final_text,
                 )
+                return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
+
+    # PPTX generation short-circuit (WOW-3): plan deck via gpt-hub-strong, build .pptx, return link.
+    if settings.pptx_enabled:
+        pptx_user_text = ""
+        for m in reversed(body["messages"]):
+            if m.get("role") == "user":
+                c = m.get("content")
+                if isinstance(c, str):
+                    pptx_user_text = c
+                elif isinstance(c, list):
+                    parts = [str(p.get("text", "")) for p in c if isinstance(p, dict) and p.get("type") == "text"]
+                    pptx_user_text = " ".join(parts).strip()
+                break
+        if pptx_user_text and is_pptx_request(pptx_user_text):
+            topic = extract_pptx_topic(pptx_user_text)
+            model_vis = client_visible_model_id(body, settings.orchestrator_public_model_id)
+            pptx_result = None
+            try:
+                pptx_result = await run_pptx_generation(
+                    http,
+                    settings=settings,
+                    base_url=settings.litellm_base_url,
+                    auth_header=request.headers.get("Authorization", ""),
+                    topic=topic,
+                )
+            except PptxPlanError as e:
+                logger.warning("pptx_plan_failed err=%s", e)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("pptx_run_failed err=%s", e)
+            if pptx_result is not None:
+                pptx_fb = pptx_result.trace_payload()
+                pptx_fb["plan_model"] = settings.pptx_plan_model
+                trace = build_trace(
+                    classification=classification,
+                    router_suggestion=router_suggestion,
+                    model_used=model_vis,
+                    artifacts=ingest_artifacts,
+                    orchestrator_fallback=pptx_fb,
+                    prompt_version=load_role_prompts(settings.role_prompts_path).prompt_version,
+                    classifier_source="heuristic",
+                    server_clock_iso=server_clock_iso,
+                    ingest_ms=ingest_ms,
+                )
+                logger.info("execution_trace %s", json.dumps(trace, ensure_ascii=False))
+                trace_hdr = trace_to_header_value(trace)
+                pptx_text = build_pptx_message_text(pptx_result)
+                if bool(body.get("stream")):
+                    chunks = build_pptx_sse_chunks(model_vis, pptx_text)
+
+                    async def pptx_sse():
+                        for ch in chunks:
+                            yield ch
+
+                    return StreamingResponse(
+                        pptx_sse(),
+                        media_type="text/event-stream",
+                        headers={"X-GPTHub-Trace": trace_hdr},
+                    )
+                out = build_pptx_chat_completion(model_label=model_vis, text=pptx_text)
                 return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
 
     # Image-generation short-circuit: detect intent on the last user text and call MWS directly.

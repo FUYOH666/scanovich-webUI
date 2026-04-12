@@ -36,6 +36,11 @@ def choose_model(classification: dict[str, Any], settings: Settings) -> dict[str
         # normal routing takes over.
         role_key = ROLE_REASONING_LOCAL
         reason = "deep_research_council_fallback"
+    elif task_type == "pptx_generation":
+        # PPTX short-circuit intercepts this in main.py; this mapping is
+        # only a defensive fallback if pptx is disabled.
+        role_key = ROLE_REASONING_LOCAL
+        reason = "pptx_generation_fallback"
     elif task_type in ("summarization", "file_analysis"):
         role_key = ROLE_DOC
         reason = "document_or_summary_heuristic"
