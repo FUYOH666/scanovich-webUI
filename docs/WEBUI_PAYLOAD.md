@@ -99,4 +99,6 @@ The orchestrator expects OpenAI-style `messages` payloads from Open WebUI.
 2. `open_webui/utils/middleware.py` — `process_chat_payload`, **`chat_completion_files_handler`** (часто здесь `get_sources_from_items` / эмбеддинги RAG)
 3. `open_webui/routers/audio.py` — STT (например `faster_whisper`) — текст должен попасть в исходящий payload к модели
 
+**Пошаговая цепочка по строкам v0.8.12:** см. [`OPEN_WEBUI_CHAT_PAYLOAD_CHAIN_v0.8.12.md`](./OPEN_WEBUI_CHAT_PAYLOAD_CHAIN_v0.8.12.md).
+
 Кастомный образ WebUI с `logger.info` в этих точках — отдельный шаг; до него достаточно **полного тела** на оркестраторе, чтобы увидеть, что именно WebUI отправил в момент `content: ""`.
