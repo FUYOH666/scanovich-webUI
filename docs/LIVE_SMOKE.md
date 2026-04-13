@@ -6,6 +6,9 @@
 > Правило: **никакой ряд не помечается `Implemented` в
 > `FEATURE_MATRIX.md` без хотя бы одной записи здесь**. Unit-тест этого
 > не заменяет — unit-тест проверяет код, а журнал проверяет стек.
+>
+> Датированные записи ниже ведутся **по возрастанию времени** (старые выше,
+> новые ниже, непосредственно перед разделом «Шаг 1»).
 
 ## Формат записи
 
@@ -279,7 +282,7 @@
 
 > Ориентир по времени: **13:50** МСК; в логах оркестратора тот же прогон — **10:54:40** UTC → **10:55:23** UTC (`execution_trace` с `"slides": 9`). Детализация фаз — в `out.txt` (корень рабочей копии).
 
-- **Stack commit:** _—_ (сверить `git rev-parse --short HEAD`)
+- **Stack commit:** 027372f
 - **Env:** тот же стек, что и соседние PPTX-записи (WebUI + orchestrator, `pptx_parallel_slide_agents_enabled`).
 - **Input:** текстовый запрос на презентацию по теме **«природа»**, **9 слайдов** в плане (parallel slide-agents).
 - **Model(s) used:** по trace — `task_type: pptx`, цепочка strong / slide-plan (как в других PPTX smoke).
@@ -287,6 +290,37 @@
 - **Result:** **OK** по end-to-end генерации; субъективно «~40 с» на план совпадает с доминированием блока slide-agents.
 - **Trace highlights:** 9× `pptx_slide_agent_done`; max на слайде с заголовком в духе «Экосистемы и их разнообразие» (~**39,6 с**), остальные короче.
 - **Notes:** **Титульный / вводный слайд в деке есть** — проблема качества/скорости не в отсутствии титульника и не в `python-pptx` (**~0,25 с** на сборку), а в **overhead на тексте слайдов**: параллельные агенты упираются в **самый медленный** вызов LLM на одном слайде. Для сравнения второй крупный прогон в том же логе («океан», 10 слайдов) — wall slide-agents **~17,5 с**, `plan_total_ms` **~21,2 с** (`out.txt`).
+
+## 2026-04-13 — `demo_benchmark.py` на `server-gpt` + разбор `docker compose` логов (WOW latency)
+
+- **Stack commit:** e84bf7460353c24a311837de1c4cd88a2552d298
+- **Env:** стек `gpthub-prod-*` на ВМ; прогон из `~/scanovich-webUI`; ключи из `.env` (как для `demo.sh`). Логи сняты целью Make из рабочей копии хакатона: `ресурсы/YandexCloud/Makefile` → `make logs-scanovich-compose > ресурсы/YandexCloud/logs.txt` (stdout: `docker compose … logs --tail 200` на сервере через `yc compute ssh`, плюс фильтр `awk` по health-шуму).
+- **Input:** `python3 scripts/demo_benchmark.py` (полный сценарий, без `--skip-wow`; те же шаги, что `scripts/demo.sh`, с замером `time.perf_counter()` на каждый HTTP-вызов).
+- **Result:** **PASS=13 FAIL=0 WARN=0** — baseline + WOW зелёные.
+
+### Latency (мс по шагам скрипта)
+
+| Step | Label | ms | Note |
+|------|--------|-----:|------|
+| 1/9 | GET /healthz | 20.3 | OK |
+| 1/9 | GET /readyz | 4.8 | OK |
+| 2/9 | GET /v1/models | 3.7 | OK |
+| 3/9 | POST text chat | 2152.3 | OK choices |
+| 4/9 | POST URL ingest | 1234.9 | OK |
+| 5/9 | POST image gen | 12216.7 | OK |
+| 6/9 | POST remember | 185.9 | OK |
+| 6/9 | POST recall | 2.3 | OK |
+| 7/9 | POST reasoning | 3672.3 | OK choices |
+| 8/9 | POST council | **121308.1** | OK |
+| 9/9 | POST pptx | **67112.9** | OK |
+
+### Что показали логи (`ресурсы/YandexCloud/logs.txt`, оркестратор)
+
+- **Expert Council (шаг 8 / ~121 с):** в `execution_trace` на **2026-04-13 07:33:04** — `short_circuit: expert_council`, **`total_ms`: 121305** (совпадает с бенчмарком). Три ветки **успешно параллельно** (`branches_failed: []`), индивидуальные **`latency_ms`** в trace: **7958** (`gpt-hub-turbo`, Generalist), **13332** (`gpt-hub-reasoning-or`), **17252** (`gpt-hub-doc`) — wall фазы fan-out порядка **~17 с** (упирается в doc-ветку). По меткам времени в том же файле: последний `POST …/chat/completions` **LiteLLM** у экспертов около **07:31:20**, ответ синтезатора — около **07:33:04** → **~104 с** уходит на **синтез** (`gpt-hub-strong`, длинный промпт с тремя мнениями). Итог: доминирует не fan-out, а **один вызов synthesis**.
+- **PPTX (шаг 9 / ~67 с):** сразу после council — classifier `pptx_generation`. В логе **`pptx_plan_first_attempt_failed`** с **`json_parse_error`** (первый JSON плана битый); второй `POST …/chat/completions` успешен. В `execution_trace` на **07:34:11**: **`plan_ms`: 66648**, **`build_ms`: 461**, 5 слайдов — узкое место **планирование/повтор**, сборка **python-pptx** — доли секунды.
+- **Побочные наблюдения в том же файле:** пачка **`GET /v1/chat/completions` → 405** на оркестраторе (чужой клиент с GET вместо POST — не этот бенч после фикса `demo_benchmark.py`); для шага URL — **`url_ingest_failed … example.com … ConnectError`** из контейнера (сеть/фильтр), при этом шаг 4 в бенче помечен OK (ответ собран без успешного fetch).
+
+- **Notes:** Полный прогон по-прежнему **WOW-dominated** (council ≫ остальное). Для презентации/оптимизации: смотреть **таймауты/модель синтеза** council и **стабильность JSON** плана PPTX (retry уже есть). Источник таблицы — терминальный вывод прогона на `server-gpt`; источник разбора фаз — строки **230–249** `ресурсы/YandexCloud/logs.txt` (`gpthub-prod-orchestrator`).
 
 ---
 
