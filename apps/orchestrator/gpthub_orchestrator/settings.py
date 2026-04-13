@@ -218,6 +218,15 @@ class Settings(BaseSettings):
         le=86400.0,
         description="TTL for one-time PPTX artifact tokens (monotonic clock).",
     )
+    pptx_slide_min_visible_chars: int = Field(
+        default=250,
+        ge=0,
+        le=500,
+        description=(
+            "Minimum characters (title + bullet strings per slide, notes excluded) before server-side "
+            "truncation; 0 disables. Must be ≤ SLIDE_AGENT_MAX_VISIBLE_CHARS (500) for per-slide agents."
+        ),
+    )
     memory_enabled: bool = Field(
         default=True,
         description="If true, orchestrator detects memory commands and injects retrieved facts.",

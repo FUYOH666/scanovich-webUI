@@ -26,10 +26,42 @@ from gpthub_orchestrator.pptx.parse import (
     parse_single_slide_detail_text,
     parse_slide_plan_text,
     slide_spec_from_agent_payload,
+    slide_visible_char_len,
 )
 from gpthub_orchestrator.pptx.schema import ALLOWED_SLIDE_KINDS, PptxGenError, SlidePlan, SlideSpec
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_PPTX_COMPLETION_MAX = 8192
+_OUTLINE_COMPLETION_MAX = 2048
+_SLIDE_AGENT_COMPLETION_MAX = 3072
+
+
+def _pptx_min_visible_rule_line(settings: Settings) -> str:
+    m = settings.pptx_slide_min_visible_chars
+    if m <= 0:
+        return ""
+    return (
+        f"- Each slide: title + all bullet strings together must total at least {m} characters "
+        "(notes excluded from this count)."
+    )
+
+
+def _slide_plan_meets_visible_min(plan: SlidePlan, settings: Settings) -> bool:
+    m = settings.pptx_slide_min_visible_chars
+    if m <= 0:
+        return True
+    return all(slide_visible_char_len(s) >= m for s in plan.slides)
+
+
+def _pptx_slide_agent_min_visible_line(settings: Settings) -> str:
+    m = settings.pptx_slide_min_visible_chars
+    if m <= 0:
+        return ""
+    return (
+        f"- On-slide text (title + bullets) must total at least {m} characters (notes excluded).\n"
+    )
+
 
 _DENSITY_RULES = """How to write bullets for the chosen text density (each array entry is one bullet):
 - minimal: 1–2 short phrases per bullet, no fluff.
@@ -62,6 +94,7 @@ Rules:
 - title: short heading.
 - bullets: 0–8 strings per slide; follow the text density level above.
 - notes: optional speaker notes (use "" if none).
+{_pptx_min_visible_rule_line(settings)}
 - Escape any double quotes inside strings properly."""
 
 
@@ -108,22 +141,35 @@ Optional "kind" from:
 Rules:
 - The JSON "title" must match the assigned slide title exactly (same language and wording).
 - bullets: 0–8 strings; follow the density level.
-- Prefer on-slide text (title + bullets) ≤ {SLIDE_AGENT_MAX_VISIBLE_CHARS} characters; the server truncates excess bullets/text if needed.
+{_pptx_slide_agent_min_visible_line(settings)}- Prefer on-slide text (title + bullets) ≤ {SLIDE_AGENT_MAX_VISIBLE_CHARS} characters; the server truncates excess bullets/text if needed.
 - notes: speaker notes (not counted toward the on-slide cap); keep brief or use "".
 - Escape any double quotes inside strings properly."""
 
 
-_RETRY_USER = (
-    "Your previous answer was not usable. Reply with ONLY one JSON object matching the schema "
-    '{"slides":[{"title":"...","bullets":["..."],"notes":"...","kind":null or one allowed kind}]} '
-    "— no markdown, no prose."
-)
+def _retry_monolith_user(settings: Settings) -> str:
+    msg = (
+        "Your previous answer was not usable. Reply with ONLY one JSON object matching the schema "
+        '{"slides":[{"title":"...","bullets":["..."],"notes":"...","kind":null or one allowed kind}]} '
+        "— no markdown, no prose."
+    )
+    m = settings.pptx_slide_min_visible_chars
+    if m > 0:
+        msg += f" Each slide: title + bullets together ≥ {m} characters (notes excluded)."
+    return msg
 
-_RETRY_SLIDE_USER = (
-    "Your previous answer was not usable. Reply with ONLY one JSON object for this single slide: "
-    '{"title":"...","bullets":["..."],"notes":"...","kind":null or allowed kind} — no markdown, no prose. '
-    f"title + bullets combined should stay ≤ {SLIDE_AGENT_MAX_VISIBLE_CHARS} characters (excess is truncated)."
-)
+
+def _retry_slide_user(settings: Settings) -> str:
+    msg = (
+        "Your previous answer was not usable. Reply with ONLY one JSON object for this single slide: "
+        '{"title":"...","bullets":["..."],"notes":"...","kind":null or allowed kind} — no markdown, no prose. '
+    )
+    m = settings.pptx_slide_min_visible_chars
+    cap = SLIDE_AGENT_MAX_VISIBLE_CHARS
+    if m > 0:
+        msg += f" title + bullets between {m} and {cap} characters (notes excluded from count)."
+    else:
+        msg += f" title + bullets combined should stay ≤ {cap} characters (excess is truncated)."
+    return msg
 
 
 def _log_pptx_timing(payload: dict[str, Any]) -> None:
@@ -163,6 +209,17 @@ def _finalize_monolithic_plan(plan: SlidePlan) -> SlidePlan:
             mode="monolithic",
         )
     return plan
+
+
+def _monolith_plan_from_raw(raw: str, settings: Settings) -> SlidePlan | None:
+    try:
+        plan = parse_slide_plan_text(raw)
+    except (ValueError, json.JSONDecodeError):
+        return None
+    if not _slide_plan_meets_visible_min(plan, settings):
+        logger.info("pptx_plan_too_short")
+        return None
+    return _finalize_monolithic_plan(plan)
 
 
 def _retryable_litellm_status(status_code: int) -> bool:
@@ -226,11 +283,12 @@ async def _post_chat(
     max_tokens: int | None = None,
 ) -> dict[str, Any]:
     url = f"{settings.litellm_base_url.rstrip('/')}/v1/chat/completions"
+    mt = _DEFAULT_PPTX_COMPLETION_MAX if max_tokens is None else max_tokens
     body: dict[str, Any] = {
         "model": model,
         "messages": messages,
         "temperature": 0.25,
-        "max_tokens": 8192 if max_tokens is None else max_tokens,
+        "max_tokens": mt,
     }
     merge_reasoning_exclude_into_body(
         body,
@@ -375,35 +433,36 @@ async def _request_slide_plan_monolithic(
             "ms": round((time.perf_counter() - t_llm) * 1000, 1),
         }
     )
-    try:
-        return _finalize_monolithic_plan(parse_slide_plan_text(raw))
-    except (ValueError, json.JSONDecodeError) as e:
-        logger.info("pptx_plan_parse_retry err=%s", e)
-        retry_msgs: list[dict[str, str]] = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": base_user},
-            {"role": "assistant", "content": raw[:6000]},
-            {"role": "user", "content": _RETRY_USER},
-        ]
-        t_retry = time.perf_counter()
-        raw2 = await _complete_plan_raw(
-            http,
-            settings,
-            chain=chain,
-            auth_header=auth,
-            messages=retry_msgs,
-        )
-        _log_pptx_timing(
-            {
-                "phase": "plan_monolithic_llm_retry_ms",
-                "ms": round((time.perf_counter() - t_retry) * 1000, 1),
-            }
-        )
-        try:
-            return _finalize_monolithic_plan(parse_slide_plan_text(raw2))
-        except (ValueError, json.JSONDecodeError) as e2:
-            logger.warning("pptx_plan_parse_failed err=%s", e2)
-            raise PptxGenError("slide_plan_json_invalid") from e2
+    plan = _monolith_plan_from_raw(raw, settings)
+    if plan is not None:
+        return plan
+
+    logger.info("pptx_plan_parse_or_short_retry")
+    retry_msgs: list[dict[str, str]] = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": base_user},
+        {"role": "assistant", "content": raw[:6000]},
+        {"role": "user", "content": _retry_monolith_user(settings)},
+    ]
+    t_retry = time.perf_counter()
+    raw2 = await _complete_plan_raw(
+        http,
+        settings,
+        chain=chain,
+        auth_header=auth,
+        messages=retry_msgs,
+    )
+    _log_pptx_timing(
+        {
+            "phase": "plan_monolithic_llm_retry_ms",
+            "ms": round((time.perf_counter() - t_retry) * 1000, 1),
+        }
+    )
+    plan2 = _monolith_plan_from_raw(raw2, settings)
+    if plan2 is not None:
+        return plan2
+    logger.warning("pptx_plan_parse_failed after retry")
+    raise PptxGenError("slide_plan_json_invalid")
 
 
 async def _request_slide_plan_parallel(
@@ -431,7 +490,7 @@ async def _request_slide_plan_parallel(
         chain=chain,
         auth_header=auth,
         messages=outline_messages,
-        max_tokens=2048,
+        max_tokens=_OUTLINE_COMPLETION_MAX,
     )
     outline_ms = (time.perf_counter() - t_outline) * 1000
     try:
@@ -485,22 +544,28 @@ async def _request_slide_plan_parallel(
                 chain=chain,
                 auth_header=auth,
                 messages=agent_msgs,
-                max_tokens=3072,
+                max_tokens=_SLIDE_AGENT_COMPLETION_MAX,
             )
-            try:
-                payload = parse_single_slide_detail_text(raw)
-                spec = clamp_slide_visible_to_max(
-                    slide_spec_from_agent_payload(
-                        payload,
-                        title_fallback=skeleton.title,
-                        kind_fallback=skeleton.kind,
-                    ),
+
+            def _spec_from_response(r: str) -> SlideSpec:
+                payload = parse_single_slide_detail_text(r)
+                spec0 = slide_spec_from_agent_payload(
+                    payload,
+                    title_fallback=skeleton.title,
+                    kind_fallback=skeleton.kind,
                 )
+                m = settings.pptx_slide_min_visible_chars
+                if m > 0 and slide_visible_char_len(spec0) < m:
+                    raise ValueError("slide_too_short")
+                return clamp_slide_visible_to_max(spec0)
+
+            try:
+                spec = _spec_from_response(raw)
             except (ValueError, json.JSONDecodeError, ValidationError) as e:
                 logger.info("pptx_slide_agent_parse_retry idx=%s err=%s", idx, e)
                 retry_msgs = agent_msgs + [
                     {"role": "assistant", "content": raw[:4000]},
-                    {"role": "user", "content": _RETRY_SLIDE_USER},
+                    {"role": "user", "content": _retry_slide_user(settings)},
                 ]
                 raw2 = await _complete_plan_raw(
                     http,
@@ -508,17 +573,10 @@ async def _request_slide_plan_parallel(
                     chain=chain,
                     auth_header=auth,
                     messages=retry_msgs,
-                    max_tokens=3072,
+                    max_tokens=_SLIDE_AGENT_COMPLETION_MAX,
                 )
                 try:
-                    payload = parse_single_slide_detail_text(raw2)
-                    spec = clamp_slide_visible_to_max(
-                        slide_spec_from_agent_payload(
-                            payload,
-                            title_fallback=skeleton.title,
-                            kind_fallback=skeleton.kind,
-                        ),
-                    )
+                    spec = _spec_from_response(raw2)
                 except (ValueError, json.JSONDecodeError, ValidationError) as e2:
                     raise PptxGenError(f"slide_agent_json_invalid idx={idx}") from e2
             elapsed = (time.perf_counter() - t0) * 1000
