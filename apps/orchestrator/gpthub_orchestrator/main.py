@@ -83,6 +83,7 @@ from gpthub_orchestrator.reasoning_response_filter import (
 from gpthub_orchestrator.response_preamble_strip import strip_known_cot_preamble
 from gpthub_orchestrator.ingest.pipeline import run_ingest_pipeline
 from gpthub_orchestrator.trace import build_trace, trace_to_header_value
+from gpthub_orchestrator.payload_log import log_chat_messages
 
 logger = logging.getLogger("gpthub_orchestrator")
 
@@ -293,8 +294,12 @@ async def chat_completions(
     if not isinstance(messages, list):
         raise HTTPException(status_code=400, detail="messages must be a list")
 
+    log_chat_messages(logger, "before_ingest", messages)
+
     ingested, ingest_artifacts, ingest_ms = await run_ingest_pipeline(messages, settings, http)
     body["messages"] = ingested
+
+    log_chat_messages(logger, "after_ingest", body["messages"])
 
     map_facade_model_to_litellm(body, settings)
 
