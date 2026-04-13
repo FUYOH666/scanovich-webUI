@@ -40,12 +40,9 @@ from gpthub_orchestrator.orchestrator_help import (
 from gpthub_orchestrator.image_gen import (
     ImageGenError,
     build_image_chat_completion,
-    build_image_sse_content_chunks,
-    build_image_sse_error_chunks,
-    build_image_sse_status_chunk,
+    build_image_sse_chunks,
     extract_image_prompt,
     generate_image_via_mws,
-    image_stream_chunk_ids,
     is_image_generation_request,
 )
 from gpthub_orchestrator.pptx import (
@@ -479,57 +476,6 @@ async def chat_completions(
                 else image_intent_user_text.strip()
             )
             model_vis = client_visible_model_id(body, settings.orchestrator_public_model_id)
-            if bool(body.get("stream")):
-                trace_pre = build_trace(
-                    classification=classification,
-                    router_suggestion=router_suggestion,
-                    model_used=model_vis,
-                    artifacts=ingest_artifacts,
-                    image_gen={"status": "generating"},
-                    prompt_version=load_role_prompts(settings.role_prompts_path).prompt_version,
-                    classifier_source=classifier_source,
-                    server_clock_iso=server_clock_iso,
-                    ingest_ms=ingest_ms,
-                )
-                trace_hdr_pre = trace_to_header_value(trace_pre)
-
-                async def image_sse():
-                    cid, created = image_stream_chunk_ids()
-                    yield build_image_sse_status_chunk(model_vis, cid, created)
-                    try:
-                        image_ref, mws_model = await generate_image_via_mws(
-                            http,
-                            settings=settings,
-                            prompt=img_prompt,
-                        )
-                    except ImageGenError as e:
-                        logger.warning("image_gen_failed err=%s", e)
-                        for ch in build_image_sse_error_chunks(model_vis, cid, created):
-                            yield ch
-                        return
-                    trace_ok = build_trace(
-                        classification=classification,
-                        router_suggestion=router_suggestion,
-                        model_used=model_vis,
-                        artifacts=ingest_artifacts,
-                        image_gen={"status": "ok", "model": mws_model},
-                        prompt_version=load_role_prompts(settings.role_prompts_path).prompt_version,
-                        classifier_source=classifier_source,
-                        server_clock_iso=server_clock_iso,
-                        ingest_ms=ingest_ms,
-                    )
-                    logger.info("execution_trace %s", json.dumps(trace_ok, ensure_ascii=False))
-                    for ch in build_image_sse_content_chunks(
-                        model_vis, img_prompt, image_ref, cid, created
-                    ):
-                        yield ch
-
-                return StreamingResponse(
-                    image_sse(),
-                    media_type="text/event-stream",
-                    headers={"X-GPTHub-Trace": trace_hdr_pre},
-                )
-
             try:
                 image_ref, mws_model = await generate_image_via_mws(
                     http,
@@ -553,6 +499,18 @@ async def chat_completions(
                 )
                 logger.info("execution_trace %s", json.dumps(trace, ensure_ascii=False))
                 trace_hdr = trace_to_header_value(trace)
+                if bool(body.get("stream")):
+                    chunks = build_image_sse_chunks(model_vis, img_prompt, image_ref)
+
+                    async def image_sse():
+                        for ch in chunks:
+                            yield ch
+
+                    return StreamingResponse(
+                        image_sse(),
+                        media_type="text/event-stream",
+                        headers={"X-GPTHub-Trace": trace_hdr},
+                    )
                 out = build_image_chat_completion(
                     model_label=model_vis,
                     prompt=img_prompt,
