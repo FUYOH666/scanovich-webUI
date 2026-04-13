@@ -464,7 +464,8 @@ async def chat_completions(
                 return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
 
     # PPTX short-circuit: slide-plan via LiteLLM (strong chain) + python-pptx (after image intent).
-    if settings.pptx_gen_enabled and classification.get("task_type") == "pptx":
+    # Classifier uses ``pptx_generation`` when ``is_pptx_request`` matches; weaker cues → ``pptx`` only.
+    if settings.pptx_gen_enabled and classification.get("task_type") in ("pptx", "pptx_generation"):
         model_vis = client_visible_model_id(body, settings.orchestrator_public_model_id)
         prompt_version = load_role_prompts(settings.role_prompts_path).prompt_version
         pptx_user_err = (

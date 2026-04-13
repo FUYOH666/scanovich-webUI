@@ -308,7 +308,7 @@ def _router_chain_auth_excerpt(
     authorization: str | None,
 ) -> tuple[list[str], str, str]:
     classification = classify_messages(messages)
-    if classification.get("task_type") != "pptx":
+    if classification.get("task_type") not in ("pptx", "pptx_generation"):
         logger.info("pptx_plan_task_mismatch got=%s", classification.get("task_type"))
 
     router = choose_model(classification, settings)
