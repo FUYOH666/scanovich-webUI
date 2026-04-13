@@ -105,7 +105,7 @@ def _bootstrap_env(*, env_file: str | None, verbose: bool) -> None:
 def http_call(
     url: str,
     *,
-    method: str = "GET",
+    method: str | None = None,
     bearer: str | None = None,
     json_body: dict[str, Any] | None = None,
 ) -> HttpResult:
@@ -117,7 +117,8 @@ def http_call(
     if bearer:
         headers["Authorization"] = f"Bearer {bearer}"
 
-    req = urllib.request.Request(url, data=payload, headers=headers, method=method)
+    http_method = method if method is not None else ("POST" if payload is not None else "GET")
+    req = urllib.request.Request(url, data=payload, headers=headers, method=http_method)
     t0 = time.perf_counter()
     try:
         with urllib.request.urlopen(req, timeout=600) as resp:
