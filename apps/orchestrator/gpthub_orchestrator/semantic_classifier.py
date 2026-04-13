@@ -341,6 +341,39 @@ def _score_tasks(query_vec: list[float], by_task: dict[str, list[list[float]]]) 
     return scores
 
 
+def _semantic_acceptance(
+    scores: dict[str, float],
+    best_task: str,
+    h_task: str,
+    settings: Settings,
+) -> tuple[bool, str, float, float, float]:
+    """Return (accept, reason, best, margin, lead_over_heuristic)."""
+    sorted_vals = sorted(scores.values(), reverse=True)
+    best = sorted_vals[0]
+    second = sorted_vals[1] if len(sorted_vals) > 1 else 0.0
+    margin = best - second
+    h_score = scores.get(h_task, 0.0)
+    lead = best - h_score
+
+    if best < settings.classifier_semantic_min_similarity:
+        return False, "below_min_similarity", best, margin, lead
+    if margin >= settings.classifier_semantic_min_margin:
+        return True, "margin_vs_second", best, margin, lead
+    if (
+        best_task != h_task
+        and lead >= settings.classifier_semantic_min_lead_over_heuristic
+    ):
+        return True, "lead_over_heuristic", best, margin, lead
+    return False, "low_confidence", best, margin, lead
+
+
+def _preview_user_text(last_user: str, *, max_len: int = 160) -> str:
+    s = last_user.replace("\n", " ").strip()
+    if len(s) <= max_len:
+        return s
+    return s[: max_len - 1] + "…"
+
+
 async def classify_messages_for_route(
     messages: list[dict[str, Any]],
     settings: Settings,
@@ -410,21 +443,23 @@ async def classify_messages_for_route(
 
     scores = _score_tasks(qv, by_task)
     best_task = max(scores, key=scores.get)
-    sorted_vals = sorted(scores.values(), reverse=True)
-    best = sorted_vals[0]
-    second = sorted_vals[1] if len(sorted_vals) > 1 else 0.0
-    margin = best - second
+    accept, accept_reason, best, margin, lead_over_h = _semantic_acceptance(
+        scores, best_task, h_task, settings
+    )
+    text_preview = _preview_user_text(last_user)
+    top_scores = json.dumps(
+        {k: round(v, 4) for k, v in sorted(scores.items(), key=lambda x: -x[1])[:8]},
+        ensure_ascii=False,
+    )
 
-    if best < settings.classifier_semantic_min_similarity or margin < settings.classifier_semantic_min_margin:
-        top_scores = json.dumps(
-            {k: round(v, 4) for k, v in sorted(scores.items(), key=lambda x: -x[1])[:5]},
-            ensure_ascii=False,
-        )
+    if not accept:
         logger.info(
-            "semantic_classifier_low_confidence best=%s margin=%s scores=%s",
+            "semantic_classifier_low_confidence best=%s margin=%s lead_over_heuristic=%s scores=%s user_text_preview=%r",
             round(best, 4),
             round(margin, 4),
+            round(lead_over_h, 4),
             top_scores,
+            text_preview,
         )
         _log_classifier_route(
             "semantic_fallback",
@@ -432,9 +467,12 @@ async def classify_messages_for_route(
             heuristic_task_type=h_task,
             best_score=round(best, 4),
             margin=round(margin, 4),
+            lead_over_heuristic=round(lead_over_h, 4),
             min_similarity=settings.classifier_semantic_min_similarity,
             min_margin=settings.classifier_semantic_min_margin,
+            min_lead_over_heuristic=settings.classifier_semantic_min_lead_over_heuristic,
             top_scores_preview=top_scores,
+            user_text_preview=text_preview,
         )
         return base, "semantic_fallback"
 
@@ -443,18 +481,29 @@ async def classify_messages_for_route(
     out["semantic_task_score"] = round(best, 4)
     out["semantic_task_margin"] = round(margin, 4)
     logger.info(
-        "semantic_classifier_chosen task=%s score=%s margin=%s (heuristic_was=%s)",
+        "semantic_classifier_chosen task=%s score=%s margin=%s lead_over_heuristic=%s accept=%s (heuristic_was=%s) user_text_preview=%r",
         best_task,
         round(best, 4),
         round(margin, 4),
+        round(lead_over_h, 4),
+        accept_reason,
         h_task,
+        text_preview,
+    )
+    resolved_by = (
+        "semantic_prototype_embeddings"
+        if accept_reason == "margin_vs_second"
+        else "semantic_lead_over_heuristic"
     )
     _log_classifier_route(
         "semantic",
-        "semantic_prototype_embeddings",
+        resolved_by,
         task_type=best_task,
         heuristic_task_type=h_task,
         score=round(best, 4),
         margin=round(margin, 4),
+        lead_over_heuristic=round(lead_over_h, 4),
+        accept_rule=accept_reason,
+        user_text_preview=text_preview,
     )
     return out, "semantic"

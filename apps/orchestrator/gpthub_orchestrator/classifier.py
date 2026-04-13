@@ -129,11 +129,16 @@ class TaskType(str, Enum):
     PPTX_GENERATION = "pptx_generation"
 
 
+# Shared with ``image_gen`` (verb + image noun); keep in sync via this fragment only.
+RU_IMPERATIVE_CREATE_VERBS = (
+    r"сделай|сделайте|создай|создайте|дай|дайте|подготовь|подготовьте|напиши|напишите|"
+    r"сгенерируй|сгенерируйте|составь|составьте"
+)
+
 # PPTX: strong phrases beat doc/code heuristics; weak cues stay below doc-heavy / code / analyze.
 _PPTX_STRONG = re.compile(
-    r"(?:^|[\s,./])/pptx\b|"
-    r"(?:сделай|сделайте|создай|создайте|подготовь|подготовьте|напиши|напишите|"
-    r"сгенерируй|сгенерируйте|составь|составьте)\s+презентац|"
+    rf"(?:^|[\s,./])/pptx\b|(?:{RU_IMPERATIVE_CREATE_VERBS})\s+презентац|"
+    rf"\bпрезентац\w*\b[^.?!\n]{{0,50}}\b(?:{RU_IMPERATIVE_CREATE_VERBS})\b|"
     r"презентаци[яию]\s+по\s+(?:этому|этой|этим|документу|тексту|файлу|материалу|теме)\b|"
     r"build\s+(?:a\s+)?deck\b|"
     r"make\s+(?:a\s+)?presentation\b|"
@@ -141,7 +146,7 @@ _PPTX_STRONG = re.compile(
     re.IGNORECASE | re.UNICODE,
 )
 _PPTX_WEAK_SLIDES_RU = re.compile(
-    r"(?:сделай|сделайте|создай|создайте|нужны|подготовь|подготовьте|сгенерируй|сгенерируйте)\s+слайд",
+    rf"(?:нужны|{RU_IMPERATIVE_CREATE_VERBS})\s+слайд",
     re.IGNORECASE | re.UNICODE,
 )
 _PPTX_WEAK_EN = re.compile(

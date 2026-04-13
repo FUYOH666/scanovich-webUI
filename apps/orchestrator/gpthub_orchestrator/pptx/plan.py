@@ -60,7 +60,7 @@ def _pptx_plan_system_prompt(settings: Settings) -> str:
     tc = settings.pptx_plan_text_content
     return f"""You output ONLY valid JSON for a slide deck plan. No markdown fences, no commentary before or after.
 Schema exactly:
-{{"slides":[{{"title":"string","bullets":["string"],"notes":"string","kind":"string or omit"}}]}}
+{{"presentation_title":"string","slides":[{{"title":"string","bullets":["string"],"notes":"string","kind":"string or omit"}}]}}
 
 Presentation context (adapt language; the user conversation defines topic and can override style):
 - Tone: {settings.pptx_plan_tone}
@@ -75,6 +75,7 @@ Optional "kind" per slide — semantic layout intent; pick one string that fits 
 Omit "kind" or use null if unsure. The deck builder may still use a simple template; "kind" guides structure and ordering of ideas.
 
 Rules:
+- Required top-level "presentation_title": one non-empty line — overall deck / talk title for the title slide only. Use a broad topic; each slide "title" must be a section heading and must not duplicate presentation_title (e.g. title "GPTHub", first slide "Проблема").
 - 1–{settings.pptx_max_slides} slides.
 - title: short heading.
 - bullets: 0–8 strings per slide; follow the text density level above.
@@ -87,7 +88,7 @@ def _pptx_outline_system_prompt(settings: Settings) -> str:
     kinds = ", ".join(sorted(ALLOWED_SLIDE_KINDS))
     return f"""You output ONLY valid JSON — deck outline (slide titles only). No markdown fences, no commentary.
 Schema exactly:
-{{"slides":[{{"title":"string","kind":"string or omit"}}]}}
+{{"presentation_title":"string","slides":[{{"title":"string","kind":"string or omit"}}]}}
 
 Presentation context:
 - Tone: {settings.pptx_plan_tone}
@@ -99,6 +100,7 @@ Optional "kind" per slide — pick one that fits from:
 Omit "kind" if unsure.
 
 Rules:
+- Required top-level "presentation_title": non-empty overall deck title for the title slide (broad topic). Each slide "title" is a section heading and must differ from presentation_title (e.g. presentation_title "Обзор GPTHub", first slide "Проблема").
 - 1–{settings.pptx_max_slides} slides.
 - Each item has only "title" and optionally "kind".
 - Do not include "bullets" or "notes".
@@ -136,7 +138,7 @@ def _retry_monolith_user() -> str:
     soft = _PPTX_PROMPT_SOFT_MIN_VISIBLE_CHARS
     return (
         "Your previous answer was not usable. Reply with ONLY one JSON object matching the schema "
-        '{"slides":[{"title":"...","bullets":["..."],"notes":"...","kind":null or one allowed kind}]} '
+        '{"presentation_title":"non-empty string","slides":[{"title":"...","bullets":["..."],"notes":"...","kind":null or one allowed kind}]} '
         f"— no markdown, no prose. Per slide, aim for ≥{soft} characters title+bullets combined when appropriate."
     )
 
@@ -484,7 +486,10 @@ async def _request_slide_plan_parallel(
             len(outline_plan.slides),
             mx,
         )
-        outline_plan = SlidePlan(slides=list(outline_plan.slides[:mx]))
+        outline_plan = SlidePlan(
+            slides=list(outline_plan.slides[:mx]),
+            presentation_title=outline_plan.presentation_title,
+        )
 
     n = len(outline_plan.slides)
     titles = [s.title for s in outline_plan.slides]
@@ -494,6 +499,7 @@ async def _request_slide_plan_parallel(
             "ms": round(outline_ms, 1),
             "slides": n,
             "outline": [{"title": s.title, "kind": s.kind} for s in outline_plan.slides],
+            "presentation_title": outline_plan.presentation_title,
         }
     )
 
@@ -590,7 +596,10 @@ async def _request_slide_plan_parallel(
             "mean_slide_agent_ms": round(sum(per_slide_ms) / len(per_slide_ms), 1) if per_slide_ms else 0,
         }
     )
-    return SlidePlan(slides=list(filled))
+    return SlidePlan(
+        slides=list(filled),
+        presentation_title=outline_plan.presentation_title,
+    )
 
 
 async def request_slide_plan(
@@ -615,7 +624,10 @@ async def request_slide_plan(
     mx = settings.pptx_max_slides
     if len(plan.slides) > mx:
         logger.info("pptx_plan_truncated plan_slides=%s kept=%s", len(plan.slides), mx)
-        plan = SlidePlan(slides=list(plan.slides[:mx]))
+        plan = SlidePlan(
+            slides=list(plan.slides[:mx]),
+            presentation_title=plan.presentation_title,
+        )
 
     _log_pptx_timing(
         {

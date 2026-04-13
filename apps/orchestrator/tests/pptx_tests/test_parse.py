@@ -20,12 +20,14 @@ def test_extract_json_object_fence() -> None:
 def test_parse_slide_plan_text_minimal() -> None:
     text = json.dumps(
         {
+            "presentation_title": "Deck",
             "slides": [
                 {"title": "Intro", "bullets": ["a", "b"], "notes": "say hi"},
-            ]
+            ],
         }
     )
     plan = parse_slide_plan_text(text)
+    assert plan.presentation_title == "Deck"
     assert len(plan.slides) == 1
     assert plan.slides[0].title == "Intro"
     assert plan.slides[0].bullets == ["a", "b"]
@@ -35,9 +37,10 @@ def test_parse_slide_plan_text_minimal() -> None:
 def test_parse_slide_plan_text_with_kind() -> None:
     text = json.dumps(
         {
+            "presentation_title": "Roadmap deck",
             "slides": [
                 {"title": "Roadmap", "bullets": ["Q1"], "notes": "", "kind": "timeline"},
-            ]
+            ],
         }
     )
     plan = parse_slide_plan_text(text)
@@ -47,9 +50,10 @@ def test_parse_slide_plan_text_with_kind() -> None:
 def test_parse_slide_plan_text_invalid_kind_dropped() -> None:
     text = json.dumps(
         {
+            "presentation_title": "X deck",
             "slides": [
                 {"title": "X", "bullets": [], "notes": "", "kind": "not-a-real-layout"},
-            ]
+            ],
         }
     )
     plan = parse_slide_plan_text(text)

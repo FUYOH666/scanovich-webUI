@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from gpthub_orchestrator.pptx import markdown_preview_with_download_link
+from gpthub_orchestrator.pptx.response import pptx_download_filename
 from gpthub_orchestrator.pptx.schema import SlidePlan, SlideSpec
 
 
@@ -12,6 +13,14 @@ def test_markdown_preview_shows_kind() -> None:
     )
     md = markdown_preview_with_download_link(plan, "https://example.test/d.pptx?token=x")
     assert "макет: `bullets`" in md
+
+
+def test_pptx_download_filename_prefers_presentation_title() -> None:
+    plan = SlidePlan(
+        presentation_title="My deck title",
+        slides=[SlideSpec(title="Section", bullets=[], notes="")],
+    )
+    assert pptx_download_filename(plan) == "My deck title.pptx"
 
 
 def test_markdown_preview_intro_line() -> None:

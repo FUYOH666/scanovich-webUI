@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import re
 
+from gpthub_orchestrator.classifier import RU_IMPERATIVE_CREATE_VERBS
+
 # ---------------------------------------------------------------------------
 # Slash commands always win.
 # ---------------------------------------------------------------------------
@@ -21,6 +23,10 @@ _PPTX_PHRASES = [
     re.compile(
         r"\b(?:сделай|создай|сгенерир\w*|подготов\w*|собер[иь]|построй|нарису\w*)"
         r"[^.?!\n]{0,40}\bпрезентац\w*",
+        re.IGNORECASE | re.UNICODE,
+    ),
+    re.compile(
+        rf"\bпрезентац\w*\b[^.?!\n]{{0,50}}\b(?:{RU_IMPERATIVE_CREATE_VERBS})\b",
         re.IGNORECASE | re.UNICODE,
     ),
     re.compile(r"\bпрезентац\w*\b[^.?!\n]{0,30}\b(?:по|про|о|об|на\s+тему)\b", re.IGNORECASE | re.UNICODE),

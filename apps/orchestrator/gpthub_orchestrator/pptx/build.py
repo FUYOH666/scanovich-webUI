@@ -50,7 +50,10 @@ _INTRO_SLIDE_LAYOUT_INDEX = 0
 
 
 def deck_title_for_intro(plan: SlidePlan) -> str:
-    """Topic line for the opening slide (first planned slide title, or a fallback)."""
+    """Topic line for the opening slide: ``presentation_title`` if set, else first slide title."""
+    pt = (plan.presentation_title or "").strip()
+    if pt:
+        return pt
     if not plan.slides:
         return "Presentation"
     return (plan.slides[0].title or "").strip() or "Presentation"

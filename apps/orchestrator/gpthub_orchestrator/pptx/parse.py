@@ -133,7 +133,11 @@ def slide_plan_from_parsed_dict(data: dict[str, Any]) -> SlidePlan:
                 "kind": normalize_slide_kind(item.get("kind")),
             }
         )
-    return SlidePlan.model_validate({"slides": normalized})
+    pt = data.get("presentation_title")
+    payload: dict[str, Any] = {"slides": normalized}
+    if pt is not None and str(pt).strip():
+        payload["presentation_title"] = str(pt).strip()
+    return SlidePlan.model_validate(payload)
 
 
 def parse_slide_plan_text(model_text: str) -> SlidePlan:
@@ -142,6 +146,8 @@ def parse_slide_plan_text(model_text: str) -> SlidePlan:
     if not isinstance(data, dict):
         raise ValueError("json_not_object")
     plan = slide_plan_from_parsed_dict(data)
+    if not (plan.presentation_title or "").strip():
+        raise ValueError("missing_presentation_title")
     if not plan.slides:
         raise ValueError("empty_slides")
     return plan
@@ -154,6 +160,8 @@ def parse_outline_plan_text(model_text: str) -> SlidePlan:
     if not isinstance(data, dict):
         raise ValueError("json_not_object")
     plan = slide_plan_from_parsed_dict(data)
+    if not (plan.presentation_title or "").strip():
+        raise ValueError("missing_presentation_title")
     if not plan.slides:
         raise ValueError("empty_slides")
     for s in plan.slides:

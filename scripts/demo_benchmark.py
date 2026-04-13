@@ -13,6 +13,9 @@ Usage:
   python3 scripts/demo_benchmark.py [--skip-wow] [--json report.json]
   python3 scripts/demo_benchmark.py --env-file /path/to/.env
 
+JSON report includes ``pptx_download_urls`` (GET ``/artifacts/pptx/…?token=…``, one-time)
+when step 9 runs and the completion body contains a markdown download link.
+
 Exit code: 1 if any mandatory step fails (FAIL > 0), else 0.
 """
 
@@ -21,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -144,6 +148,27 @@ def ms(seconds: float | None) -> str:
     return f"{seconds * 1000:.1f}"
 
 
+def extract_pptx_download_urls(chat_completion_body: str) -> list[str]:
+    """Parse OpenAI-style JSON; collect ``https?://…/artifacts/pptx/…`` from markdown ``](url)``."""
+    out: list[str] = []
+    try:
+        data: Any = json.loads(chat_completion_body)
+    except json.JSONDecodeError:
+        return out
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return out
+    msg = choices[0].get("message") if isinstance(choices[0], dict) else None
+    content = msg.get("content") if isinstance(msg, dict) else None
+    if not isinstance(content, str):
+        return out
+    for m in re.finditer(r"\]\((https?://[^)\s]+)\)", content):
+        url = m.group(1)
+        if "/artifacts/pptx/" in url and url not in out:
+            out.append(url)
+    return out
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Timed GPTHub demo smoke")
     parser.add_argument("--skip-wow", action="store_true", help="Skip Council + PPTX steps")
@@ -173,6 +198,7 @@ def main() -> int:
     skip_wow = args.skip_wow or _env("DEMO_SKIP_WOW") == "1"
 
     timings: list[TimingRow] = []
+    pptx_download_urls: list[str] = []
     pass_n = fail_n = warn_n = 0
 
     def step(title: str) -> None:
@@ -412,9 +438,18 @@ def main() -> int:
         r = http_call(f"{base}/v1/chat/completions", bearer=api_key, json_body=pptx_json)
         print(f"  [{ms(r.seconds)} ms]", end=" ")
         low = r.body.lower()
+        pptx_download_urls = extract_pptx_download_urls(r.body)
         if "pptx" in low or "data:application/vnd.openxmlformats-officedocument.presentationml" in r.body:
             ok("pptx path returned inline .pptx attachment")
             record("9/9", "POST pptx", r.seconds, "OK")
+            if pptx_download_urls:
+                for u in pptx_download_urls:
+                    print(f"  pptx_download_url: {u}")
+            else:
+                print(
+                    "  (no /artifacts/pptx/ URL in assistant message — check JSON or PPTX_ARTIFACTS_PUBLIC_BASE_URL)",
+                    file=sys.stderr,
+                )
         else:
             warn(f"pptx path not merged yet or failed: {r.body[:200]!r}")
             record("9/9", "POST pptx", r.seconds, "WARN")
@@ -436,6 +471,7 @@ def main() -> int:
             "pass": pass_n,
             "fail": fail_n,
             "warn": warn_n,
+            "pptx_download_urls": pptx_download_urls,
             "timings": [
                 {
                     "step": r.step,

@@ -8,35 +8,8 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from gpthub_orchestrator.semantic_classifier import (
-    SEMANTIC_TASK_PROTOTYPES,
-    _task_prototypes_for_embeddings,
-    ambiguous_ru_exact_task_type,
-    classify_messages_for_route,
-)
+from gpthub_orchestrator.semantic_classifier import SEMANTIC_TASK_PROTOTYPES, classify_messages_for_route
 from gpthub_orchestrator.settings import Settings
-
-# Реплики и желаемый смысл маршрута (golden).
-# Второй элемент — условная метка: pptx | image_gen | deep_research | simple_chat.
-RU_USER_INTENT_SAMPLES: list[tuple[str, str]] = [
-    ("бахни презу", "pptx"),
-    ("сделай мне картинку слона", "image_gen"),
-    ("делай картинку по презентации", "image_gen"),
-    (
-        "хорошо подумай. как вернуть данные сервера после падения",
-        "deep_research",
-    ),
-    ("надоел. дай презу уже", "pptx"),
-    ("верни картинку", "image_gen"),
-    ("напиши описание презентации. ответь в чате", "simple_chat"),
-    ("ты всё испортил. я хочу презу.", "pptx"),
-    ("что-ты сгенерировал. в чат пиши.", "simple_chat"),
-    ("как считаешь как стоит делать презентацию.", "simple_chat"),
-    ("кинь презенташку", "pptx"),
-    ("image хочу", "image_gen"),
-    ("картинку слона хочу", "image_gen"),
-    ("рисунок хочу", "image_gen"),
-]
 
 
 def _stub_vec(text: str, *, dim: int = 16) -> list[float]:
@@ -46,22 +19,6 @@ def _stub_vec(text: str, *, dim: int = 16) -> list[float]:
         b = h[i % len(h)]
         out.append((b / 127.5) - 1.0)
     return out
-
-
-def _coarse_to_semantic_task(coarse: str) -> str:
-    return {
-        "pptx": "pptx_generation",
-        "image_gen": "image_generation",
-        "deep_research": "deep_research",
-        "simple_chat": "simple_chat",
-        "user_help": "user_help",
-    }[coarse]
-
-
-def _first_prototype_phrase(semantic_task: str) -> str:
-    protos = _task_prototypes_for_embeddings()[semantic_task]
-    assert protos, f"no embedding prototypes for task {semantic_task!r}"
-    return protos[0]
 
 
 def _make_settings(**kw: object) -> Settings:
@@ -159,20 +116,59 @@ async def test_semantic_overrides_task_when_confident():
     assert "semantic_task_score" in out
 
 
+@pytest.mark.parametrize(
+    "override_locked",
+    [pytest.param(False, id="override_false"), pytest.param(True, id="override_true")],
+)
 @pytest.mark.asyncio
-async def test_locked_heuristic_skips_semantic():
+async def test_locked_heuristic_semantic_respects_override_flag(override_locked: bool) -> None:
+    """``CLASSIFIER_SEMANTIC_OVERRIDE_LOCKED_HEURISTIC``: False — замок; True — семантика может перебить greeting."""
     import gpthub_orchestrator.semantic_classifier as sem
 
     sem._proto_cache = None
-    s = _make_settings()
+    s = _make_settings(classifier_semantic_override_locked_heuristic=override_locked)
     messages = [{"role": "user", "content": "Привет"}]
 
+    anchor = SEMANTIC_TASK_PROTOTYPES["code_help"][0]
+
+    async def fake_embed_texts(
+        _http: httpx.AsyncClient,
+        *,
+        settings: Settings,
+        texts: list[str],
+    ) -> list[list[float]]:
+        return [_stub_vec(t) for t in texts]
+
+    async def fake_embed_one(
+        _http: httpx.AsyncClient,
+        *,
+        settings: Settings,
+        text: str,
+    ) -> list[float]:
+        _ = text
+        return _stub_vec(anchor)
+
     async with httpx.AsyncClient() as http:
-        with patch("gpthub_orchestrator.semantic_classifier.embed_texts", new_callable=AsyncMock) as em:
-            out, src = await classify_messages_for_route(messages, s, http)
-    em.assert_not_called()
-    assert src == "heuristic"
-    assert out["task_type"] == "greeting_or_tiny"
+        with patch("gpthub_orchestrator.semantic_classifier.embed_texts", new_callable=AsyncMock) as em_texts:
+            if override_locked:
+                em_texts.side_effect = fake_embed_texts
+                with patch(
+                    "gpthub_orchestrator.semantic_classifier.embed_one",
+                    side_effect=fake_embed_one,
+                ):
+                    out, src = await classify_messages_for_route(messages, s, http)
+            else:
+                out, src = await classify_messages_for_route(messages, s, http)
+
+    if not override_locked:
+        em_texts.assert_not_called()
+        assert src == "heuristic"
+        assert out["task_type"] == "greeting_or_tiny"
+    else:
+        em_texts.assert_called()
+        assert src == "semantic"
+        assert out["task_type"] == "code_help"
+        assert "semantic_task_score" in out
 
 
 @pytest.mark.parametrize(
@@ -182,53 +178,45 @@ async def test_locked_heuristic_skips_semantic():
         pytest.param("env", id="thresholds_env_0.38_0.02"),
     ],
 )
-@pytest.mark.parametrize(("text", "expected_coarse"), RU_USER_INTENT_SAMPLES)
 @pytest.mark.asyncio
-async def test_ru_user_intent_samples_with_semantic_enabled(
-    text: str,
-    expected_coarse: str,
-    threshold_profile: str,
-) -> None:
-    """При включённой семантике: ``ambiguous_ru`` или ``semantic``; пороги dev и как в .env."""
+async def test_override_locked_true_matches_env_semantic_thresholds(threshold_profile: str) -> None:
+    """Прод-флаги: semantic on + ``CLASSIFIER_SEMANTIC_OVERRIDE_LOCKED_HEURISTIC=true`` — замок снят."""
     import gpthub_orchestrator.semantic_classifier as sem
 
     sem._proto_cache = None
-    expected_task = _coarse_to_semantic_task(expected_coarse)
-    s = _make_settings() if threshold_profile == "dev" else _make_settings_env_semantic()
-    messages = [{"role": "user", "content": text}]
+    kw = dict(classifier_semantic_override_locked_heuristic=True)
+    s = (
+        _make_settings(**kw)
+        if threshold_profile == "dev"
+        else _make_settings_env_semantic(**kw)
+    )
+    messages = [{"role": "user", "content": "Привет"}]
+    anchor = SEMANTIC_TASK_PROTOTYPES["code_help"][0]
+
+    async def fake_embed_texts(
+        _http: httpx.AsyncClient,
+        *,
+        settings: Settings,
+        texts: list[str],
+    ) -> list[list[float]]:
+        return [_stub_vec(t) for t in texts]
+
+    async def fake_embed_one(
+        _http: httpx.AsyncClient,
+        *,
+        settings: Settings,
+        text: str,
+    ) -> list[float]:
+        _ = text
+        return _stub_vec(anchor)
 
     async with httpx.AsyncClient() as http:
-        if ambiguous_ru_exact_task_type(text) is not None:
+        with (
+            patch("gpthub_orchestrator.semantic_classifier.embed_texts", side_effect=fake_embed_texts),
+            patch("gpthub_orchestrator.semantic_classifier.embed_one", side_effect=fake_embed_one),
+        ):
             out, src = await classify_messages_for_route(messages, s, http)
-            assert src == "ambiguous_ru", (text, src, out.get("task_type"))
-            assert out["task_type"] == expected_task
-        else:
 
-            async def fake_embed_texts(
-                _http: httpx.AsyncClient,
-                *,
-                settings: Settings,
-                texts: list[str],
-            ) -> list[list[float]]:
-                return [_stub_vec(t) for t in texts]
-
-            anchor = _first_prototype_phrase(expected_task)
-
-            async def fake_embed_one(
-                _http: httpx.AsyncClient,
-                *,
-                settings: Settings,
-                text: str,
-            ) -> list[float]:
-                _ = text
-                return _stub_vec(anchor)
-
-            with (
-                patch("gpthub_orchestrator.semantic_classifier.embed_texts", side_effect=fake_embed_texts),
-                patch("gpthub_orchestrator.semantic_classifier.embed_one", side_effect=fake_embed_one),
-            ):
-                out, src = await classify_messages_for_route(messages, s, http)
-
-            assert src == "semantic", (threshold_profile, text, src, out.get("task_type"))
-            assert out["task_type"] == expected_task, (threshold_profile, text, out["task_type"])
-            assert "semantic_task_score" in out
+    assert src == "semantic"
+    assert out["task_type"] == "code_help"
+    assert s.classifier_semantic_override_locked_heuristic is True

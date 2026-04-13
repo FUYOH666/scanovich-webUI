@@ -24,10 +24,11 @@ async def test_pptx_short_circuit_non_stream_ok():
     reset_pptx_artifact_store_for_tests()
     plan_json = json.dumps(
         {
+            "presentation_title": "Презентация про демо",
             "slides": [
                 {"title": "Введение", "bullets": ["пункт а"], "notes": ""},
                 {"title": "Итог", "bullets": [], "notes": "спасибо"},
-            ]
+            ],
         }
     )
 

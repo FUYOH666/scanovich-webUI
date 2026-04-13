@@ -322,6 +322,35 @@
 
 - **Notes:** Полный прогон по-прежнему **WOW-dominated** (council ≫ остальное). Для презентации/оптимизации: смотреть **таймауты/модель синтеза** council и **стабильность JSON** плана PPTX (retry уже есть). Источник таблицы — терминальный вывод прогона на `server-gpt`; источник разбора фаз — строки **230–249** `ресурсы/YandexCloud/logs.txt` (`gpthub-prod-orchestrator`).
 
+## 2026-04-13 — `demo_benchmark.py` (терминал локального/другого прогона): council ~165 s, PPTX ~15 s
+
+- **Stack commit:** _как у рабочего клона на момент прогона_
+- **Env:** `python3 scripts/demo_benchmark.py` из `scanovich-webUI`; `ORCHESTRATOR_URL` + ключ как для WebUI.
+- **Input:** полный сценарий (без `--skip-wow`), те же шаги, что `demo.sh`, с замером `perf_counter` на HTTP.
+- **Result:** **PASS=13 FAIL=0 WARN=0**.
+
+### Latency (мс по шагам — как в терминале)
+
+| Step | Label | ms | Note |
+|------|--------|-----:|------|
+| 1/9 | GET /healthz | 20.4 | OK |
+| 1/9 | GET /readyz | 5.1 | OK |
+| 2/9 | GET /v1/models | 3.9 | OK |
+| 3/9 | POST text chat | 1954.9 | OK |
+| 4/9 | POST URL ingest | 1443.0 | OK |
+| 5/9 | POST image gen | 23257.6 | OK |
+| 6/9 | POST remember / recall | 337.0 / 175.6 | OK |
+| 7/9 | POST reasoning | 5644.3 | OK |
+| 8/9 | POST council | **164708.0** | OK |
+| 9/9 | POST pptx | **15444.2** | OK |
+
+### Разбор по `ресурсы/YandexCloud/logs.txt` (фрагмент `gpthub-prod-orchestrator`)
+
+- **Шаг 8 / council ~165 s:** в `execution_trace` — `orchestrator_fallback.short_circuit: expert_council`. Строка с **`total_ms`: 164705** (стр. ~95) совпадает с wall time клиента. Три ветки в trace с отдельными **`latency_ms`** (~8 s / ~31 s / ~17 s) не суммируются в 165 s: основная задержка — **цепочка после fan-out**, в т.ч. **синтез** (`gpt-hub-strong`, ещё один тяжёлый `POST …/chat/completions` в LiteLLM). Это ожидаемо для deep research / council, а не «оркестратор ждёт сам с собой».
+- **Шаг 9 / PPTX ~15 s:** сразу после ответа council — маршрут `pptx_generation` (в логе семантика пропущена: `semantic_skipped_locked_heuristic_task`). В **`pptx_timing`**: **`plan_outline_llm_ms` ~9849.8**; **`plan_slide_agents_ms` (wall)** ~5372.7 при **`concurrency`: 7**; **`plan_total_ms` ~15223.2**; **`build_deck_ms` ~217.7** (стр. ~105–122, 129). Сборка файла — доли секунды; **~15 s** — это план + параллельные slide-agents, без multi-minute synthesis как у council.
+
+- **Notes:** В отчёт `demo_benchmark.py --json` добавлено поле **`pptx_download_urls`** (одноразовые `GET /artifacts/pptx/…?token=…`) для скачивания `.pptx` после смока.
+
 ## 2026-04-13 — Разбор `logs.txt`: council ~176 с, PPTX timeout ~180 с (другой фрагмент того же файла)
 
 - **Stack commit:** d289e39

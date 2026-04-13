@@ -92,6 +92,16 @@ class Settings(BaseSettings):
         le=0.5,
         description="Min gap between best and second-best class cosine scores.",
     )
+    classifier_semantic_min_lead_over_heuristic: float = Field(
+        default=0.04,
+        ge=0.0,
+        le=0.5,
+        description=(
+            "E2E: real embeddings often tie on adjacent classes (e.g. image_generation vs image_analysis). "
+            "If margin vs second-best fails but best score still leads heuristic task_type by at least this gap, "
+            "accept the semantic best class (requires best >= min_similarity and best_task != heuristic task)."
+        ),
+    )
     classifier_semantic_override_locked_heuristic: bool = Field(
         default=False,
         description="Dev only: allow semantic to override council/pptx_generation/greeting_or_tiny.",

@@ -9,6 +9,7 @@ import pytest
 from pptx import Presentation  # type: ignore[import-untyped]
 
 from gpthub_orchestrator.pptx import PptxGenError, build_pptx_from_plan
+from gpthub_orchestrator.pptx.build import deck_title_for_intro
 from gpthub_orchestrator.pptx.schema import SlidePlan, SlideSpec
 from gpthub_orchestrator.settings import Settings
 
@@ -28,6 +29,21 @@ def test_build_pptx_from_plan_zip_magic(pptx_settings: Settings) -> None:
         settings=pptx_settings.model_copy(update={"pptx_intro_slide_enabled": False}),
     )
     assert len(Presentation(BytesIO(blob_no_intro)).slides) == 1
+
+
+def test_deck_title_for_intro_prefers_presentation_title() -> None:
+    plan = SlidePlan(
+        presentation_title="Обзор GPTHub",
+        slides=[SlideSpec(title="Проблема", bullets=["x"], notes="")],
+    )
+    assert deck_title_for_intro(plan) == "Обзор GPTHub"
+
+
+def test_deck_title_for_intro_falls_back_to_first_slide() -> None:
+    plan = SlidePlan(
+        slides=[SlideSpec(title="Only section", bullets=[], notes="")],
+    )
+    assert deck_title_for_intro(plan) == "Only section"
 
 
 def test_build_pptx_empty_plan_raises(pptx_settings: Settings) -> None:
