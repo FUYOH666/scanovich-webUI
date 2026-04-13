@@ -26,6 +26,4 @@ def pptx_settings() -> Settings:
         litellm_base_url="http://litellm.test",
         orchestrator_api_key="k",
         pptx_asset_templates_enabled=False,
-        # Tests use tiny JSON payloads; prod default 250 would reject them.
-        pptx_slide_min_visible_chars=0,
     )

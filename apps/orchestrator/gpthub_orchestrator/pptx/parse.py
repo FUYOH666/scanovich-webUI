@@ -12,11 +12,6 @@ from gpthub_orchestrator.pptx.schema import MAX_SLIDES, SlidePlan, SlideSpec, no
 SLIDE_AGENT_MAX_VISIBLE_CHARS = 500
 
 
-def slide_visible_char_len(spec: SlideSpec) -> int:
-    """Characters in title plus all bullet strings (same basis as the on-slide cap)."""
-    return len(spec.title) + sum(len(b) for b in spec.bullets)
-
-
 def _visible_char_len(title: str, bullets: list[str]) -> int:
     return len(title) + sum(len(b) for b in bullets)
 

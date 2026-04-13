@@ -322,6 +322,19 @@
 
 - **Notes:** Полный прогон по-прежнему **WOW-dominated** (council ≫ остальное). Для презентации/оптимизации: смотреть **таймауты/модель синтеза** council и **стабильность JSON** плана PPTX (retry уже есть). Источник таблицы — терминальный вывод прогона на `server-gpt`; источник разбора фаз — строки **230–249** `ресурсы/YandexCloud/logs.txt` (`gpthub-prod-orchestrator`).
 
+## 2026-04-13 — Разбор `logs.txt`: council ~176 с, PPTX timeout ~180 с (другой фрагмент того же файла)
+
+- **Stack commit:** d289e39
+- **Env:** `gpthub-prod-orchestrator`; логи: `ресурсы/YandexCloud/logs.txt` (снятие через `make logs-scanovich-compose` из рабочей копии хакатона).
+- **Input:** тот же файл логов, что и у записи **`demo_benchmark.py`** выше, но **другой** интервал по времени / другой полный прогон в терминале.
+- **Model(s) used:** council — синтез `gpt-hub-strong`; PPTX — цепочка плана/слайдов из trace того фрагмента.
+- **Latency:** council **`total_ms`: 176426** (~176 с) — совпадает с терминалом; PPTX клиент **~180003 ms**, в логах **`pptx_gen_failed err=timeout`** (~`pptx_plan_timeout_seconds`, на стенде часто **180**).
+- **Result:** **PARTIAL** — council в том фрагменте завершился; PPTX оборван по таймауту пайплайна.
+- **Trace highlights:**
+  - **Council:** ветки **strong / reasoning / doc** ~**7–17 с** каждая, **параллельно**; почти всё время ~**176 с** — **один вызов синтеза** (длинный контекст: три экспертных ответа + промпт).
+  - **PPTX:** `plan_outline_llm_ms` порядка **~8 с**; slide agents — часть **8–11 с**, отдельные вызовы **~60 с** и **~82 с**; в **старых** логах того прогона — **`slide_too_short`** и повторные запросы (**в текущем коде** ретрай по минимуму символов **убран**, в промптах — мягкий ориентир); **`reasoning_fields_stripped_from_completion`** встречалось.
+- **Notes:** Для углубления — LiteLLM по тем же меткам времени / `request_id`. При необходимости поднять **`PPTX_PLAN_TIMEOUT_SECONDS`** или снизить нагрузку (меньше слайдов, другая модель slide agents). В **`pptx_slide_agent_done`** в JSON: **`pptx_slide_number`**, **`plan_slides_total`** (без `outline_idx` / `deck_slide_*`).
+
 ---
 
 ## Шаг 1 — Docker bring-up (чеклист ROADMAP §0.4)
