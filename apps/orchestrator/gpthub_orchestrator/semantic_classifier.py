@@ -29,6 +29,22 @@ from gpthub_orchestrator.settings import Settings
 
 logger = logging.getLogger(__name__)
 
+
+def _log_classifier_route(
+    source: str,
+    resolved_by: str,
+    *,
+    level: int = logging.INFO,
+    **details: Any,
+) -> None:
+    """Who chose ``classifier_source`` for routing (semantic path vs heuristic-only branches)."""
+    payload: dict[str, Any] = {"classifier_source": source, "classifier_source_resolved_by": resolved_by}
+    for k, v in details.items():
+        if v is not None:
+            payload[k] = v
+    logger.log(level, "classifier_route_resolution %s", json.dumps(payload, ensure_ascii=False))
+
+
 # Exemplar phrases per router task_type (RU + EN). Tuned for broad coverage; adjust with logs.
 SEMANTIC_TASK_PROTOTYPES: dict[str, list[str]] = {
     "simple_chat": [
@@ -338,31 +354,58 @@ async def classify_messages_for_route(
         if amb_task is not None:
             out = dict(base)
             out["task_type"] = amb_task
-            logger.info(
-                "ambiguous_ru_exact task=%s (heuristic_was=%s)",
-                amb_task,
-                base.get("task_type"),
+            _log_classifier_route(
+                "ambiguous_ru",
+                "ambiguous_ru_table",
+                task_type=amb_task,
+                heuristic_task_type=base.get("task_type"),
             )
             return out, "ambiguous_ru"
 
     if not settings.classifier_semantic_enabled:
+        _log_classifier_route(
+            "heuristic",
+            "semantic_disabled",
+            heuristic_task_type=base.get("task_type"),
+        )
         return base, "heuristic"
 
     if _last_user_has_image(messages):
+        _log_classifier_route(
+            "heuristic",
+            "semantic_skipped_multimodal_image",
+            heuristic_task_type=base.get("task_type"),
+        )
         return base, "heuristic"
 
     h_task = str(base.get("task_type") or "")
     if h_task in _HEURISTIC_TASK_LOCKED and not settings.classifier_semantic_override_locked_heuristic:
+        _log_classifier_route(
+            "heuristic",
+            "semantic_skipped_locked_heuristic_task",
+            heuristic_task_type=h_task,
+        )
         return base, "heuristic"
 
     if not last_user:
+        _log_classifier_route(
+            "heuristic",
+            "semantic_skipped_empty_user_text",
+            heuristic_task_type=base.get("task_type"),
+        )
         return base, "heuristic"
 
     try:
         by_task = await _prototype_vectors_by_task(http, settings)
         qv = await embed_one(http, settings=settings, text=last_user[:8000])
     except EmbeddingError as e:
-        logger.warning("semantic_classifier_embed_failed err=%s", e)
+        _log_classifier_route(
+            "semantic_fallback",
+            "semantic_embed_error",
+            level=logging.WARNING,
+            heuristic_task_type=base.get("task_type"),
+            error=str(e),
+        )
         return base, "semantic_fallback"
 
     scores = _score_tasks(qv, by_task)
@@ -373,11 +416,25 @@ async def classify_messages_for_route(
     margin = best - second
 
     if best < settings.classifier_semantic_min_similarity or margin < settings.classifier_semantic_min_margin:
+        top_scores = json.dumps(
+            {k: round(v, 4) for k, v in sorted(scores.items(), key=lambda x: -x[1])[:5]},
+            ensure_ascii=False,
+        )
         logger.info(
             "semantic_classifier_low_confidence best=%s margin=%s scores=%s",
             round(best, 4),
             round(margin, 4),
-            json.dumps({k: round(v, 4) for k, v in sorted(scores.items(), key=lambda x: -x[1])[:5]}, ensure_ascii=False),
+            top_scores,
+        )
+        _log_classifier_route(
+            "semantic_fallback",
+            "semantic_low_confidence",
+            heuristic_task_type=h_task,
+            best_score=round(best, 4),
+            margin=round(margin, 4),
+            min_similarity=settings.classifier_semantic_min_similarity,
+            min_margin=settings.classifier_semantic_min_margin,
+            top_scores_preview=top_scores,
         )
         return base, "semantic_fallback"
 
@@ -391,5 +448,13 @@ async def classify_messages_for_route(
         round(best, 4),
         round(margin, 4),
         h_task,
+    )
+    _log_classifier_route(
+        "semantic",
+        "semantic_prototype_embeddings",
+        task_type=best_task,
+        heuristic_task_type=h_task,
+        score=round(best, 4),
+        margin=round(margin, 4),
     )
     return out, "semantic"

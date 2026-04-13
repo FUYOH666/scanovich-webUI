@@ -35,6 +35,7 @@ RU_USER_INTENT_SAMPLES: list[tuple[str, str]] = [
     ("кинь презенташку", "pptx"),
     ("image хочу", "image_gen"),
     ("картинку слона хочу", "image_gen"),
+    ("рисунок хочу", "image_gen"),
 ]
 
 
@@ -72,6 +73,22 @@ def _make_settings(**kw: object) -> Settings:
         "classifier_semantic_enabled": True,
         "classifier_semantic_min_similarity": 0.25,
         "classifier_semantic_min_margin": 0.01,
+    }
+    base.update(kw)
+    return Settings(**base)
+
+
+def _make_settings_env_semantic(**kw: object) -> Settings:
+    """Пороги как в прод-.env: CLASSIFIER_SEMANTIC_MIN_SIMILARITY=0.38, MIN_MARGIN=0.02."""
+    base = {
+        "litellm_base_url": "http://litellm.test",
+        "orchestrator_api_key": "k",
+        "mws_gpt_api_base": "https://api.test/v1",
+        "mws_gpt_api_key": "mk",
+        "classifier_semantic_enabled": True,
+        "classifier_semantic_min_similarity": 0.38,
+        "classifier_semantic_min_margin": 0.02,
+        "classifier_semantic_override_locked_heuristic": False,
     }
     base.update(kw)
     return Settings(**base)
@@ -158,18 +175,26 @@ async def test_locked_heuristic_skips_semantic():
     assert out["task_type"] == "greeting_or_tiny"
 
 
+@pytest.mark.parametrize(
+    "threshold_profile",
+    [
+        pytest.param("dev", id="thresholds_0.25_0.01"),
+        pytest.param("env", id="thresholds_env_0.38_0.02"),
+    ],
+)
 @pytest.mark.parametrize(("text", "expected_coarse"), RU_USER_INTENT_SAMPLES)
 @pytest.mark.asyncio
 async def test_ru_user_intent_samples_with_semantic_enabled(
     text: str,
     expected_coarse: str,
+    threshold_profile: str,
 ) -> None:
-    """При ``classifier_semantic_enabled=True``: либо ``ambiguous_ru`` (таблица), либо ``semantic`` (эмбеддинги)."""
+    """При включённой семантике: ``ambiguous_ru`` или ``semantic``; пороги dev и как в .env."""
     import gpthub_orchestrator.semantic_classifier as sem
 
     sem._proto_cache = None
     expected_task = _coarse_to_semantic_task(expected_coarse)
-    s = _make_settings()
+    s = _make_settings() if threshold_profile == "dev" else _make_settings_env_semantic()
     messages = [{"role": "user", "content": text}]
 
     async with httpx.AsyncClient() as http:
@@ -204,6 +229,6 @@ async def test_ru_user_intent_samples_with_semantic_enabled(
             ):
                 out, src = await classify_messages_for_route(messages, s, http)
 
-            assert src == "semantic", (text, src, out.get("task_type"))
-            assert out["task_type"] == expected_task
+            assert src == "semantic", (threshold_profile, text, src, out.get("task_type"))
+            assert out["task_type"] == expected_task, (threshold_profile, text, out["task_type"])
             assert "semantic_task_score" in out

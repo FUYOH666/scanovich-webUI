@@ -301,8 +301,13 @@ def classify_messages(messages: list[dict[str, Any]]) -> dict[str, Any]:
         "complexity_score": complexity,
         "user_text_preview": last_user[:200],
     }
+    log_payload = {
+        **out,
+        "classifier_layer": "heuristic_rule_based",
+        "classifier_source_resolved_by": "classifier.classify_messages",
+    }
     logger.info(
         "modality_classified",
-        extra={"extra": json.dumps(out, ensure_ascii=False)},
+        extra={"extra": json.dumps(log_payload, ensure_ascii=False)},
     )
     return out
