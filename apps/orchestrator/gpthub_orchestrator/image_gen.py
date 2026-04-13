@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
@@ -14,6 +15,89 @@ from gpthub_orchestrator.classifier import RU_IMPERATIVE_CREATE_VERBS
 from gpthub_orchestrator.settings import Settings
 
 logger = logging.getLogger(__name__)
+
+# Shown as the first streaming delta while MWS image generation runs (Open WebUI shows it immediately).
+IMAGE_STREAM_USER_STATUS = "Обрабатываю запрос\n\n"
+
+
+def image_stream_chunk_ids() -> tuple[str, int]:
+    return f"chatcmpl-img-{uuid.uuid4().hex[:12]}", int(time.time())
+
+
+def _sse_data_line(obj: dict[str, Any]) -> bytes:
+    return b"data: " + json.dumps(obj, ensure_ascii=False).encode("utf-8") + b"\n\n"
+
+
+def build_image_sse_status_chunk(model_label: str, cid: str, created: int) -> bytes:
+    """First SSE event: user-visible wait text before ``generate_image_via_mws`` completes."""
+    chunk: dict[str, Any] = {
+        "id": cid,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model_label,
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"role": "assistant", "content": IMAGE_STREAM_USER_STATUS},
+                "finish_reason": None,
+            }
+        ],
+    }
+    return _sse_data_line(chunk)
+
+
+def build_image_sse_content_chunks(
+    model_label: str, prompt: str, image_ref: str, cid: str, created: int
+) -> list[bytes]:
+    """SSE events after status: image markdown body, finish, [DONE]."""
+    content = f'![{prompt[:120]}]({image_ref})\n\n*Сгенерировано через MWS `{model_label}`.*'
+    mid: dict[str, Any] = {
+        "id": cid,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model_label,
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"content": content},
+                "finish_reason": None,
+            }
+        ],
+    }
+    final: dict[str, Any] = {
+        "id": cid,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model_label,
+        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+    }
+    return [_sse_data_line(mid), _sse_data_line(final), b"data: [DONE]\n\n"]
+
+
+def build_image_sse_error_chunks(model_label: str, cid: str, created: int) -> list[bytes]:
+    """SSE completion after ``IMAGE_STREAM_USER_STATUS`` when MWS image gen fails (stream path)."""
+    msg = "Не удалось сгенерировать изображение.\n"
+    mid: dict[str, Any] = {
+        "id": cid,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model_label,
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"content": msg},
+                "finish_reason": None,
+            }
+        ],
+    }
+    final: dict[str, Any] = {
+        "id": cid,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model_label,
+        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+    }
+    return [_sse_data_line(mid), _sse_data_line(final), b"data: [DONE]\n\n"]
 
 
 # Strong triggers: these regexes decide whether to short-circuit chat into image gen.
@@ -174,28 +258,9 @@ def build_image_chat_completion(
 
 
 def build_image_sse_chunks(model_label: str, prompt: str, image_ref: str) -> list[bytes]:
-    """Minimal SSE deltas for streaming image response."""
-    content = f'![{prompt[:120]}]({image_ref})\n\n*Сгенерировано через MWS `{model_label}`.*'
-    cid = f"chatcmpl-img-{uuid.uuid4().hex[:12]}"
-    created = int(time.time())
-    first = {
-        "id": cid,
-        "object": "chat.completion.chunk",
-        "created": created,
-        "model": model_label,
-        "choices": [{"index": 0, "delta": {"role": "assistant", "content": content}, "finish_reason": None}],
-    }
-    final = {
-        "id": cid,
-        "object": "chat.completion.chunk",
-        "created": created,
-        "model": model_label,
-        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-    }
-    import json as _json
-
+    """Full SSE sequence (status + image body + finish) for tests and non-async callers."""
+    cid, created = image_stream_chunk_ids()
     return [
-        b"data: " + _json.dumps(first, ensure_ascii=False).encode("utf-8") + b"\n\n",
-        b"data: " + _json.dumps(final, ensure_ascii=False).encode("utf-8") + b"\n\n",
-        b"data: [DONE]\n\n",
+        build_image_sse_status_chunk(model_label, cid, created),
+        *build_image_sse_content_chunks(model_label, prompt, image_ref, cid, created),
     ]

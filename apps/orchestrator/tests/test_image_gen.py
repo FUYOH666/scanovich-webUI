@@ -6,10 +6,15 @@ import httpx
 import pytest
 
 from gpthub_orchestrator.image_gen import (
+    IMAGE_STREAM_USER_STATUS,
     ImageGenError,
     build_image_chat_completion,
+    build_image_sse_chunks,
+    build_image_sse_content_chunks,
+    build_image_sse_status_chunk,
     extract_image_prompt,
     generate_image_via_mws,
+    image_stream_chunk_ids,
     is_image_generation_request,
 )
 from gpthub_orchestrator.settings import Settings
@@ -160,3 +165,26 @@ def test_build_image_chat_completion_embeds_markdown_image():
     assert content.startswith("![red apple]")
     assert "https://x.test/img.png" in content
     assert out["object"] == "chat.completion"
+
+
+def test_build_image_sse_stream_starts_with_user_status():
+    chunks = build_image_sse_chunks(
+        model_label="gpt-hub",
+        prompt="red apple",
+        image_ref="https://x.test/img.png",
+    )
+    assert len(chunks) >= 4
+    first = chunks[0].decode("utf-8")
+    assert "Обрабатываю запрос" in first
+    assert IMAGE_STREAM_USER_STATUS.strip() in first.replace("\\n", "\n")
+    second = chunks[1].decode("utf-8")
+    assert "![red apple]" in second
+
+
+def test_build_image_sse_split_helpers_share_ids():
+    cid, created = image_stream_chunk_ids()
+    status = build_image_sse_status_chunk("m", cid, created)
+    rest = build_image_sse_content_chunks("m", "p", "https://x/u.png", cid, created)
+    assert cid.encode() in status
+    for part in rest:
+        assert cid.encode() in part
