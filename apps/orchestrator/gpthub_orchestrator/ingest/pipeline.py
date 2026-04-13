@@ -36,6 +36,16 @@ logger = logging.getLogger(__name__)
 _ARTIFACT_CONTENT_CAP = 24_000
 
 
+def _file_items_summary(indexed_items: list[tuple[int, Any]]) -> str:
+    return json.dumps(
+        [
+            {"part_idx": i, "filename": w.filename, "mime": w.mime, "raw_bytes": len(w.raw)}
+            for i, w in indexed_items
+        ],
+        ensure_ascii=False,
+    )
+
+
 def _is_audio_item(mime: str, filename: str) -> bool:
     if mime.startswith("audio/"):
         return True
@@ -174,13 +184,24 @@ async def _process_one_audio(
 ) -> dict[str, Any]:
     base_url = settings.resolved_asr_base_url()
     api_key = settings.resolved_asr_api_key()
+    ct = item.mime if "/" in item.mime else "application/octet-stream"
+    logger.info(
+        "asr_ingest_start filename=%s mime=%s bytes=%s asr_base_configured=%s",
+        item.filename,
+        ct,
+        len(item.raw),
+        bool(base_url and api_key),
+    )
     if not base_url or not api_key:
+        logger.warning(
+            "asr_ingest_skipped_missing_credentials filename=%s hint=ORCHESTRATOR_ASR_*_or_MWS_GPT_API_*",
+            item.filename,
+        )
         return {
             "type": "transcript",
             "title": item.filename,
             "content": "[Audio attachment present; set ORCHESTRATOR_ASR_BASE_URL/ASR_API_KEY or MWS_GPT_API_BASE/KEY.]",
         }
-    ct = item.mime if "/" in item.mime else "application/octet-stream"
     try:
         text = await transcribe_audio_bytes(
             http,
@@ -194,6 +215,12 @@ async def _process_one_audio(
     except AsrError as e:
         logger.warning("asr_ingest_failed file=%s err=%s", item.filename, e)
         text = f"[ASR error: {e}]"
+    logger.info(
+        "asr_ingest_done filename=%s transcript_chars=%s head=%s",
+        item.filename,
+        len(text),
+        text[:400].replace("\n", "\\n"),
+    )
     if len(text) > _ARTIFACT_CONTENT_CAP:
         text = text[:_ARTIFACT_CONTENT_CAP] + "\n… [truncated]"
     return {"type": "transcript", "title": item.filename, "content": text}
@@ -248,16 +275,34 @@ async def run_ingest_pipeline(
     Returns (new_messages, trace_artifacts, ingest_ms).
     """
     if not settings.ingest_enabled:
+        pidx, pit = extract_file_work_items(messages)
+        logger.info(
+            "ingest_disabled ingest_enabled=false peek_user_idx=%s peek_items=%s",
+            pidx,
+            _file_items_summary(pit) if pit else "[]",
+        )
         return messages, [], None
 
     peek_idx, peek_items = extract_file_work_items(messages)
     peek_urls = _peek_urls(messages, settings)
+    logger.info(
+        "ingest_peek last_user_msg_idx=%s file_parts=%s urls=%s",
+        peek_idx,
+        _file_items_summary(peek_items) if peek_items else "[]",
+        json.dumps(peek_urls, ensure_ascii=False),
+    )
     if (peek_idx is None or not peek_items) and not peek_urls:
+        logger.info("ingest_noop no_file_parts_no_urls")
         return messages, [], None
 
     t0 = time.perf_counter()
     msgs = copy.deepcopy(messages)
     user_idx, indexed_items = extract_file_work_items(msgs)
+    logger.info(
+        "ingest_extract deepcopy_user_idx=%s indexed_parts=%s",
+        user_idx,
+        _file_items_summary(indexed_items) if indexed_items else "[]",
+    )
 
     drop_indices: set[int] = set()
     tasks: list[Any] = []
@@ -287,6 +332,12 @@ async def run_ingest_pipeline(
         meta.append(("url", url))
 
     if not tasks:
+        logger.info(
+            "ingest_no_tasks_after_queue user_idx=%s indexed_n=%s url_n=%s",
+            user_idx,
+            len(indexed_items),
+            len(peek_urls),
+        )
         return messages, [], None
 
     results = await asyncio.gather(*tasks, return_exceptions=True)

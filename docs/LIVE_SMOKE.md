@@ -364,6 +364,24 @@
   - **PPTX:** `plan_outline_llm_ms` порядка **~8 с**; slide agents — часть **8–11 с**, отдельные вызовы **~60 с** и **~82 с**; в **старых** логах того прогона — **`slide_too_short`** и повторные запросы (**в текущем коде** ретрай по минимуму символов **убран**, в промптах — мягкий ориентир); **`reasoning_fields_stripped_from_completion`** встречалось.
 - **Notes:** Для углубления — LiteLLM по тем же меткам времени / `request_id`. При необходимости поднять **`PPTX_PLAN_TIMEOUT_SECONDS`** или снизить нагрузку (меньше слайдов, другая модель slide agents). В **`pptx_slide_agent_done`** в JSON: **`pptx_slide_number`**, **`plan_slides_total`** (без `outline_idx` / `deck_slide_*`).
 
+## 2026-04-13 ~18:50 UTC — Row 2 Voice (mic): STT OK, пустой `user.content` в оркестраторе, 413 на `embedding-shim`
+
+- **Stack commit:** _n/a (прод-стек `gpthub-prod-*` на VM; фрагмент логов: `ресурсы/YandexCloud/logs.txt`)_
+- **Env:** compose с `gpthub-prod-open-webui`, `gpthub-prod-orchestrator`, `gpthub-prod-litellm`, **`gpthub-prod-embedding-shim`** (RAG); в UI модель **`gpt-hub`**.
+- **Input:** голос с микрофона в WebUI (загрузка как **`video/webm`**, имя вида `…21-50-08.webm`); новый чат после записи.
+- **Model(s) used:** STT — **`faster_whisper`** внутри контейнера WebUI (не MWS `whisper-medium` на этом шаге); ответ чата — через оркестратор → LiteLLM → MWS.
+- **Latency:** ~3.2 с аудио на стороне whisper; далее несколько быстрых `POST` к оркестратору (в т.ч. служебные промпты WebUI с префиксом `### Task:`).
+- **Result:** **PARTIAL** — транскрипт и индексация файла в векторную коллекцию прошли; сценарий «один нормальный ответ на голос» не закрыт: зафиксирован **пустой** текст пользователя в одном из вызовов и **ошибка RAG** при эмбеддинге.
+- **Trace highlights:**
+  - **WebUI / STT:** `open_webui.routers.files:upload_file` (`video/webm`) → `open_webui.routers.audio:transcribe` → конвертация **webm → mp3** → `faster_whisper`: `Processing audio with duration 00:03.180`, язык **`ru`**, вероятность **~0.94** → `save_docs_to_vector_db` / `process_file` — **1** чанк в коллекцию `file-65412b3c-…`.
+  - **Orchestrator:** `incoming_chat_messages` с непустым `content` на первом круге; затем **`messages: [{"role":"user","content":""}]`** → `classifier_route_resolution` с **`semantic_skipped_empty_user_text`**, **`simple_chat`**.
+  - **WebUI / RAG:** в `process_chat` → `chat_completion_files_handler` → `get_sources_from_items` → `query_collection` — запрос эмбеддинга на **`http://embedding-shim:8000/v1/embeddings`** → **`413 Request Entity Too Large`** (в стектрейсе у `query_embeddings` встречается **`queries: ['']`**); отдельная строка лога shim: **`413`** на `POST /v1/embeddings`.
+- **Notes:**
+  - **Две линии расследования:** (1) почему WebUI в одном из шагов шлёт в оркестратор **пустой** `user.content` после успешного STT; (2) почему цепочка источников бьётся об **413** на shim (лимит тела/прокси, пустой query, конфиг RAG).
+  - **Row 2 vs Row 4:** здесь распознавание — **UI-managed** whisper в WebUI; **Row 4** (ASR вложений в оркестраторе, MWS `whisper-medium`) — отдельный продуктовый путь, см. `docs/WEBUI_PAYLOAD.md`.
+  - **Что сделать дальше:** локально воспроизвести; для одного падения снять **полный** JSON тела `POST /v1/chat/completions` к оркестратору; проверить лимиты **`apps/embedding_shim`** и upstream; при сжатых сроках — осознанный bypass RAG (см. Row 6 / `BYPASS_EMBEDDING_AND_RETRIEVAL`) или правка ветки `chat_completion_files_handler` в форке WebUI. После фикса — дописать сюда запись **OK** с тем же сценарием.
+  - **Якоря в логе:** `ресурсы/YandexCloud/logs.txt` — WebUI **18:50:17–18:50:20** (upload / transcribe / индексация); оркестратор **18:50:23–18:50:31**; пустой content **18:50:27,637**; **413** и стек **18:50:27.619** (`retrieval/utils.py:1145`).
+
 ---
 
 ## Шаг 1 — Docker bring-up (чеклист ROADMAP §0.4)
@@ -390,6 +408,7 @@
 - **Input:** голосовое сообщение через WebUI mic
 - **Path:** STT → text → orchestrator → LiteLLM → MWS
 - **Result:** _не выполнено_
+- **Journal:** см. **2026-04-13 ~18:50 UTC** выше — **PARTIAL** на прод-стеке (STT OK, пустой `user.content` + **413** на `embedding-shim` при RAG); нужен retry после фикса / bypass.
 
 ### [pending] Row 3 — Image generation
 
