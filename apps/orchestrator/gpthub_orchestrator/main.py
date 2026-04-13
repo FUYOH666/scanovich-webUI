@@ -17,7 +17,7 @@ from urllib.parse import quote
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from gpthub_orchestrator.classifier import classify_messages
+from gpthub_orchestrator.semantic_classifier import classify_messages_for_route
 from gpthub_orchestrator.clock_context import build_session_clock_block
 from gpthub_orchestrator.council import (
     build_council_chat_completion,
@@ -31,6 +31,11 @@ from gpthub_orchestrator.greeting_canned import (
     canned_chat_completion_sse_chunks,
     client_visible_model_id,
     greeting_canned_eligible,
+)
+from gpthub_orchestrator.orchestrator_help import (
+    build_orchestrator_help,
+    format_help_for_chat,
+    greeting_help_footer,
 )
 from gpthub_orchestrator.image_gen import (
     ImageGenError,
@@ -207,6 +212,12 @@ async def readyz(
     return {"status": "ready", "service": "gpthub-orchestrator", "litellm": "ok"}
 
 
+@app.get("/help")
+async def orchestrator_help() -> dict[str, Any]:
+    """Machine-readable capabilities (no Bearer)."""
+    return build_orchestrator_help()
+
+
 @app.get("/artifacts/pptx/{artifact_id}")
 async def download_pptx_artifact(
     artifact_id: str,
@@ -287,7 +298,11 @@ async def chat_completions(
 
     map_facade_model_to_litellm(body, settings)
 
-    classification = classify_messages(body["messages"])
+    classification, classifier_source = await classify_messages_for_route(
+        body["messages"],
+        settings,
+        http,
+    )
     router_suggestion = choose_model(classification, settings)
     clock_prefix, server_clock_iso = build_session_clock_block(settings)
     auth_header = request.headers.get("Authorization", "")
@@ -323,7 +338,7 @@ async def chat_completions(
                     artifacts=ingest_artifacts,
                     orchestrator_fallback=mem_fb,
                     prompt_version=load_role_prompts(settings.role_prompts_path).prompt_version,
-                    classifier_source="heuristic",
+                    classifier_source=classifier_source,
                     server_clock_iso=server_clock_iso,
                     ingest_ms=ingest_ms,
                 )
@@ -346,6 +361,39 @@ async def chat_completions(
                     text=mem_result.reply_text,
                 )
                 return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
+
+    # Help short-circuit: classifier ``user_help`` — до council / image / pptx, чтобы не перехватывали пограничные фразы.
+    if classification.get("task_type") == "user_help":
+        role_prompts = load_role_prompts(settings.role_prompts_path)
+        prompt_version = role_prompts.prompt_version
+        model_vis = client_visible_model_id(body, settings.orchestrator_public_model_id)
+        help_text = format_help_for_chat()
+        trace = build_trace(
+            classification=classification,
+            router_suggestion=router_suggestion,
+            model_used=model_vis,
+            artifacts=ingest_artifacts,
+            prompt_version=prompt_version,
+            classifier_source=classifier_source,
+            server_clock_iso=server_clock_iso,
+            canned_response=True,
+            ingest_ms=ingest_ms,
+        )
+        logger.info("execution_trace %s", json.dumps(trace, ensure_ascii=False))
+        trace_hdr = trace_to_header_value(trace)
+        if bool(body.get("stream")):
+
+            async def help_sse():
+                for chunk in canned_chat_completion_sse_chunks(model=model_vis, content=help_text):
+                    yield chunk
+
+            return StreamingResponse(
+                help_sse(),
+                media_type="text/event-stream",
+                headers={"X-GPTHub-Trace": trace_hdr},
+            )
+        out = canned_chat_completion_json(model=model_vis, content=help_text)
+        return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
 
     # Expert Council short-circuit (WOW-1): fan-out to 3 MWS experts and synthesize.
     if settings.council_enabled:
@@ -382,7 +430,7 @@ async def chat_completions(
                     artifacts=ingest_artifacts,
                     orchestrator_fallback=council_fb,
                     prompt_version=load_role_prompts(settings.role_prompts_path).prompt_version,
-                    classifier_source="heuristic",
+                    classifier_source=classifier_source,
                     server_clock_iso=server_clock_iso,
                     ingest_ms=ingest_ms,
                 )
@@ -418,8 +466,15 @@ async def chat_completions(
                     parts = [str(p.get("text", "")) for p in c if isinstance(p, dict) and p.get("type") == "text"]
                     image_intent_user_text = " ".join(parts).strip()
                 break
-        if image_intent_user_text and is_image_generation_request(image_intent_user_text):
-            img_prompt = extract_image_prompt(image_intent_user_text)
+        route_image_gen = classification.get("task_type") == "image_generation"
+        if image_intent_user_text and (
+            is_image_generation_request(image_intent_user_text) or route_image_gen
+        ):
+            img_prompt = (
+                extract_image_prompt(image_intent_user_text)
+                if is_image_generation_request(image_intent_user_text)
+                else image_intent_user_text.strip()
+            )
             model_vis = client_visible_model_id(body, settings.orchestrator_public_model_id)
             try:
                 image_ref, mws_model = await generate_image_via_mws(
@@ -438,7 +493,7 @@ async def chat_completions(
                     artifacts=ingest_artifacts,
                     image_gen={"status": "ok", "model": mws_model},
                     prompt_version=load_role_prompts(settings.role_prompts_path).prompt_version,
-                    classifier_source="heuristic",
+                    classifier_source=classifier_source,
                     server_clock_iso=server_clock_iso,
                     ingest_ms=ingest_ms,
                 )
@@ -480,7 +535,7 @@ async def chat_completions(
                 artifacts=ingest_artifacts,
                 pptx=pptx_meta,
                 prompt_version=prompt_version,
-                classifier_source="heuristic",
+                classifier_source=classifier_source,
                 server_clock_iso=server_clock_iso,
                 ingest_ms=ingest_ms,
             )
@@ -550,7 +605,7 @@ async def chat_completions(
                 artifacts=ingest_artifacts,
                 pptx={"status": "ok", "slides": len(plan.slides)},
                 prompt_version=prompt_version,
-                classifier_source="heuristic",
+                classifier_source=classifier_source,
                 server_clock_iso=server_clock_iso,
                 ingest_ms=ingest_ms,
             )
@@ -596,14 +651,14 @@ async def chat_completions(
         role_prompts = load_role_prompts(settings.role_prompts_path)
         prompt_version = role_prompts.prompt_version
         model_vis = client_visible_model_id(body, settings.orchestrator_public_model_id)
-        canned_text = settings.greeting_canned_message
+        canned_text = settings.greeting_canned_message + greeting_help_footer()
         trace = build_trace(
             classification=classification,
             router_suggestion=router_suggestion,
             model_used=model_vis,
             artifacts=ingest_artifacts,
             prompt_version=prompt_version,
-            classifier_source="heuristic",
+            classifier_source=classifier_source,
             server_clock_iso=server_clock_iso,
             canned_response=True,
             ingest_ms=ingest_ms,
@@ -700,7 +755,7 @@ async def chat_completions(
             artifacts=ingest_artifacts,
             orchestrator_fallback=stream_fb,
             prompt_version=prompt_version,
-            classifier_source="heuristic",
+            classifier_source=classifier_source,
             server_clock_iso=server_clock_iso,
             ingest_ms=ingest_ms,
         )
@@ -793,7 +848,7 @@ async def chat_completions(
             model_used=model_used,
             artifacts=ingest_artifacts,
             prompt_version=prompt_version,
-            classifier_source="heuristic",
+            classifier_source=classifier_source,
             server_clock_iso=server_clock_iso,
             ingest_ms=ingest_ms,
         )
@@ -836,7 +891,7 @@ async def chat_completions(
                 artifacts=ingest_artifacts,
                 orchestrator_fallback=fb_meta,
                 prompt_version=prompt_version,
-                classifier_source="heuristic",
+                classifier_source=classifier_source,
                 server_clock_iso=server_clock_iso,
                 ingest_ms=ingest_ms,
             )
@@ -873,7 +928,7 @@ async def chat_completions(
         artifacts=ingest_artifacts,
         orchestrator_fallback=fb_meta,
         prompt_version=prompt_version,
-        classifier_source="heuristic",
+        classifier_source=classifier_source,
         server_clock_iso=server_clock_iso,
         ingest_ms=ingest_ms,
     )

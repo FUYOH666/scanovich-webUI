@@ -72,6 +72,30 @@ class Settings(BaseSettings):
         min_length=1,
         description="Assistant text for canned greeting short-circuit",
     )
+    classifier_semantic_enabled: bool = Field(
+        default=False,
+        description=(
+            "If true, refine task_type via MWS embeddings (same model as memory) vs built-in prototypes; "
+            "requires MWS_GPT_API_BASE/KEY. Does not override council/pptx_generation/greeting_or_tiny "
+            "unless classifier_semantic_override_locked_heuristic."
+        ),
+    )
+    classifier_semantic_min_similarity: float = Field(
+        default=0.38,
+        ge=0.0,
+        le=1.0,
+        description="Min cosine similarity to best prototype class to accept semantic task_type.",
+    )
+    classifier_semantic_min_margin: float = Field(
+        default=0.02,
+        ge=0.0,
+        le=0.5,
+        description="Min gap between best and second-best class cosine scores.",
+    )
+    classifier_semantic_override_locked_heuristic: bool = Field(
+        default=False,
+        description="Dev only: allow semantic to override council/pptx_generation/greeting_or_tiny.",
+    )
     orchestrator_strip_known_cot_preamble: bool = Field(
         default=False,
         description="If true, non-stream responses may strip known CoT preambles from assistant content (last resort)",

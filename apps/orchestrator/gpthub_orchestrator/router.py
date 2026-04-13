@@ -62,6 +62,12 @@ def choose_model(classification: dict[str, Any], settings: Settings) -> dict[str
     elif task_type == "greeting_or_tiny":
         role_key = ROLE_FAST_TEXT_CHAT
         reason = "greeting_or_tiny_chat"
+    elif task_type == "user_help":
+        role_key = ROLE_FAST_TEXT_CHAT
+        reason = "user_help_canned"
+    elif task_type == "image_generation":
+        role_key = ROLE_FAST_TEXT
+        reason = "image_generation_short_circuit_fallback"
     else:
         role_key = ROLE_FAST_TEXT
         reason = "default_text_chat"
