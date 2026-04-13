@@ -30,6 +30,7 @@ import statistics
 import sys
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 import httpx
 
@@ -112,6 +113,22 @@ def _fetch_mws_model_ids(settings: object) -> set[str] | None:
     return out
 
 
+def _bench_router_stub(model_alias: str):
+    """Force a single LiteLLM alias (prod path uses ``choose_model`` from task_type)."""
+
+    def _fake(classification: dict, settings: object) -> dict:
+        _ = classification, settings
+        return {
+            "model_name": model_alias,
+            "model_role": "reasoning_code_local",
+            "fallback_aliases": [model_alias],
+            "reason": "bench_override",
+            "task_type": "pptx_generation",
+        }
+
+    return _fake
+
+
 async def _bench_one(
     *,
     settings: object,
@@ -120,26 +137,31 @@ async def _bench_one(
     client: httpx.AsyncClient,
 ) -> tuple[bool, float, float, int, str | None]:
     """Returns ok, plan_seconds, build_seconds, pptx_bytes, error_message."""
-    from gpthub_orchestrator.pptx_gen import PptxPlanError, build_pptx_from_plan, request_slide_plan
+    from gpthub_orchestrator.pptx import PptxGenError, build_pptx_from_plan, request_slide_plan
+    from gpthub_orchestrator.pptx.build import load_stripped_base_presentation
 
-    s = settings.model_copy(update={"pptx_plan_model": model_alias})
-    base = s.litellm_base_url.rstrip("/")
+    s = settings.model_copy(
+        update={
+            "pptx_parallel_slide_agents_enabled": False,
+        }
+    )
     auth = f"Bearer {s.orchestrator_api_key}"
     err: str | None = None
     t0 = time.perf_counter()
     try:
-        plan = await request_slide_plan(
-            client,
-            settings=s,
-            base_url=base,
-            auth_header=auth,
-            topic=topic,
-        )
+        with patch("gpthub_orchestrator.pptx.plan.choose_model", _bench_router_stub(model_alias)):
+            plan = await request_slide_plan(
+                client,
+                s,
+                [{"role": "user", "content": topic}],
+                authorization=auth,
+            )
         t1 = time.perf_counter()
-        blob = build_pptx_from_plan(plan)
+        base_prs = load_stripped_base_presentation(s)
+        blob = build_pptx_from_plan(plan, settings=s, base_prs=base_prs)
         t2 = time.perf_counter()
         return True, t1 - t0, t2 - t1, len(blob), None
-    except PptxPlanError as e:
+    except PptxGenError as e:
         err = str(e)
         return False, time.perf_counter() - t0, 0.0, 0, err
     except Exception as e:
