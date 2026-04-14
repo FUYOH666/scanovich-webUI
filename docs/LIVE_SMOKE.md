@@ -318,7 +318,7 @@
 
 - **Expert Council (шаг 8 / ~121 с):** в `execution_trace` на **2026-04-13 07:33:04** — `short_circuit: expert_council`, **`total_ms`: 121305** (совпадает с бенчмарком). Три ветки **успешно параллельно** (`branches_failed: []`), индивидуальные **`latency_ms`** в trace: **7958** (`gpt-hub-turbo`, Generalist), **13332** (`gpt-hub-reasoning-or`), **17252** (`gpt-hub-doc`) — wall фазы fan-out порядка **~17 с** (упирается в doc-ветку). По меткам времени в том же файле: последний `POST …/chat/completions` **LiteLLM** у экспертов около **07:31:20**, ответ синтезатора — около **07:33:04** → **~104 с** уходит на **синтез** (`gpt-hub-strong`, длинный промпт с тремя мнениями). Итог: доминирует не fan-out, а **один вызов synthesis**.
 - **PPTX (шаг 9 / ~67 с):** сразу после council — classifier `pptx_generation`. В логе **`pptx_plan_first_attempt_failed`** с **`json_parse_error`** (первый JSON плана битый); второй `POST …/chat/completions` успешен. В `execution_trace` на **07:34:11**: **`plan_ms`: 66648**, **`build_ms`: 461**, 5 слайдов — узкое место **планирование/повтор**, сборка **python-pptx** — доли секунды.
-- **Побочные наблюдения в том же файле:** пачка **`GET /v1/chat/completions` → 405** на оркестраторе (чужой клиент с GET вместо POST — не этот бенч после фикса `demo_benchmark.py`); для шага URL — **`url_ingest_failed … example.com … ConnectError`** из контейнера (сеть/фильтр), при этом шаг 4 в бенче помечен OK (ответ собран без успешного fetch).
+- **Побочные наблюдения в том же файле:** пачка **`GET /v1/chat/completions` → 405** на оркестраторе (чужой клиент с GET вместо POST — не этот бенч). Шаг URL в **`demo_benchmark.py`** бьёт по **`https://mws.ru/services/mws-gpt/?utm_source=organic_google`**; в норме в логах оркестратора — **`ingest_complete`** с **`url_text`** и prepended **`system`** с заголовком **«GPT для бизнеса: LLM платформа - MWS»** (как в Row 7–8).
 
 - **Notes:** Полный прогон по-прежнему **WOW-dominated** (council ≫ остальное). Для презентации/оптимизации: смотреть **таймауты/модель синтеза** council и **стабильность JSON** плана PPTX (retry уже есть). Источник таблицы — терминальный вывод прогона на `server-gpt`; источник разбора фаз — строки **230–249** `ресурсы/YandexCloud/logs.txt` (`gpthub-prod-orchestrator`).
 
@@ -449,34 +449,38 @@
 ## Шаг 1 — Docker bring-up (чеклист ROADMAP §0.4)
 
 Сводка: записи выше закрывают teardown / compose / health+curl; **«Step 1 WebUI smoke»** — исторический **PARTIAL** (PDF без RAG); **«Step 1 WebUI RAG smoke»** — тот же сценарий PDF в браузере с профилем **`rag`** и настройкой эмбеддингов (**OK**).
-Дополнительно: при полном P0-прогоне детализировать ряды 1–12 в секции шага 2 ниже.
+Дополнительно: **P0 по инжесту/маршрутизации и каноническому URL-smoke закрыт** (Row 8 + шаг 4 `scripts/demo_benchmark.py` — `https://mws.ru/services/mws-gpt/?utm_source=organic_google`); полный чеклист рядов 1–12 — секция шага 2 ниже, отдельные пункты помечены `[pending]` где ещё нет прогона.
 
 ---
 
 ## Шаг 2 — Полный P0 smoke (ряды 1–12)
 
-### [pending] Row 1 — Text chat
+### Row 1 — Text chat (живой прогон по логам YC)
 
-- **Stack commit:** _—_
-- **Input:** `"Объясни, что такое RAG в двух предложениях"`
-- **Model(s) used:** _—_
-- **Latency:** _—_
-- **Result:** _не выполнено_
-- **Trace highlights:** _—_
-- **Notes:** _—_
+- **Источник:** `ресурсы/YandexCloud/logs.txt` (выгрузка compose `--profile rag`, чат `5ac65129-c5d8-4619-9bc7-d298879b05c0`, **2026-04-14 ~19:37 UTC**).
+- **Input:** `"Объясни, что такое RAG в двух предложениях"` (в той же сессии — уточнение `"Я имел в виду рак, который используется в машинном обучении."`).
+- **Model(s) used:** `gpt-hub-turbo`, роль `fast_text`, `task_type: simple_chat` (`semantic_fallback` из‑за низкой уверенности семантики на уточнении).
+- **Latency:** _не замеряли отдельно_; следующий ход после RAG — follow-up Open WebUI на `gpt-hub-turbo` ~**19:37:26–19:37:29** UTC.
+- **Result:** **PARTIAL (содержание)** — по логам первая реплика трактует RAG как **Red/Amber/Green** (проектный статус), не retrieval-augmented generation; после уточнения модель даёт **некорректную** расшифровку «Rationale-Augmented Generation». **Стек:** HTTP **200**, `execution_trace` без ошибок.
+- **Trace highlights:** `default_text_chat`, `classifier_source: semantic_fallback` на уточнении.
+- **Notes:** для защиты лучше формулировка «RAG = retrieval-augmented generation» или включить контекст/поиск; иначе модель путает аббревиатуры.
 
-### [pending] Row 2 — Voice chat (UI-managed)
+### Row 2 — Voice chat (UI-managed)
 
 - **Input:** голосовое сообщение через WebUI mic
 - **Path:** STT → text → orchestrator → LiteLLM → MWS
-- **Result:** _не выполнено_
+- **Result:** _в `ресурсы/YandexCloud/logs.txt` этой выгрузки запросов с микрофона нет_
 - **Journal:** см. **2026-04-13 ~18:50 UTC** выше — **PARTIAL** на прод-стеке (STT OK, пустой `user.content` + **413** на `embedding-shim` при RAG); нужен retry после фикса / bypass.
 
-### [pending] Row 3 — Image generation
+### Row 3 — Image generation (OK по логам YC)
 
+- **Источник:** тот же `ресурсы/YandexCloud/logs.txt`, **2026-04-14 ~19:37:54 → 19:39:19 UTC**.
 - **Input:** `"Нарисуй рыжего кота в шляпе"`
 - **Expected:** inline markdown `![](...)` с URL из `qwen-image`
-- **Result:** _не выполнено_
+- **Result:** **OK (оркестратор)** — `POST https://api.gpt.mws.ru/v1/images/generations` **200**; в `execution_trace`: `"image_gen": {"status": "ok", "model": "qwen-image"}`; фасад `model_used`/`selected_model`: `gpt-hub`. Wall от классификации до trace ~**84 s**.
+- Был сгенерирована красная кепка. Проблема модели, а не оркестратора.
+(user_text_preview='Нарисуй рыжего кота в шляпе' в логах передавалось модели)
+- **Notes:** в trace `task_type` остаётся `simple_chat` (семантика дала `semantic_fallback` рядом с `image_generation`); картинка уходит через short-circuit image API, как в `FEATURE_MATRIX` / `demo_benchmark`.
 
 ### [pending] Row 4 — ASR
 
@@ -484,29 +488,30 @@
 - **Expected:** artifact `transcript` в system, ответ модели по содержимому
 - **Result:** _не выполнено_
 
-### [pending] Row 5 — VLM
+### Row 5 — VLM (OK по логам YC)
 
-- **Input:** фото с текстом на английском
+- **Источник:** `ресурсы/YandexCloud/logs.txt`, **2026-04-14 ~19:39:44 UTC** (тот же чат `5ac65129-…`).
+- **Input:** сообщение с **multimodal** контентом (в логе: `modalities: ["text", "image"]`. Текста не было, семантика пропущена `semantic_skipped_multimodal_image`).
 - **Expected:** role `vision`, модель из `gpt-hub-vision` chain, ответ по изображению
-- **Result:** _не выполнено_
+- **Result:** **OK** — `detected_task: image_analysis`, `model_role: vision_general`, `model_used: gpt-hub-vision`, router `reason: vision_multimodal_content`, LiteLLM **200**.
 
-### [pending] Row 6 — Files (PDF + plain text)
+### Row 6 — Files (PDF + plain text) (PARTIAL, прогон 2026-04-14)
 
-- **Input:** PDF с парой абзацев + .md файл
+- **Input:** `sample.pdf` (короткий тестовый PDF, ~18 KB) + `Пельмени.md` с диска Open WebUI в одном user-тёрне.
 - **Expected:** `document_text` artifacts в system, ответ по содержимому
-- **Result:** _не выполнено_
+- **Result:** **PARTIAL** — **инжест OK:** в `ingest_peek` оба файла с `open_webui_disk`; `ingest_complete` за **~15 ms** с **`artifacts=["document_text", "document_text"]`**; в `system` — извлечённый текст PDF (**«Sample PDF»**, **«This is a simple PDF»**, lorem) и второй блок `document_text` для `.md`. **Ответ пользователю не OK:** в переписке фигурируют ответы в духе «нет доступа к содержимому, кроме упоминания document_text / transcript», без опоры на реальный текст из `system`; частично из‑за маршрута **`gpt-hub-vision`** при прошлой картинке в истории и слабого текста в последнем user (до правки эвристики «картинка только в последнем user»).
 
-### [pending] Row 7 — Web search (Tavily)
+### Row 7 — Web search (Tavily) (OK по стеку WebUI + контексту оркестратора)
 
 - **Prereq:** `ENABLE_WEB_SEARCH=true` + `TAVILY_API_KEY` в env WebUI
-- **Input:** `"Что нового про MWS GPT на этой неделе?"`
-- **Result:** _не выполнено_
+- **Input:** `"Что нового про MWS GPT на этой неделе?"` (в сессии также встречается вариант с префиксом `*   ` от UI)
+- **Result:** **OK** — в том же окне времени Open WebUI отрабатывает цепочку веб-поиска: в логах приложения есть вызов **`generate_queries`**, создание/наполнение коллекции вида **`web-search-…`** (эмбеддинги, порядка **~90** чанков). У оркестратора на тёрне с URL из чата **`ingest_complete`** даёт артефакт **`url_text`**, а в prepended **`system`** попадает, в частности, заголовок **«GPT для бизнеса: LLM платформа - MWS»** и текст навигации портала (**«Направления MWS»**, **«Решения»**, **«Ресурсы»**, **«Документация»** и т.д.). Имени провайдера поиска в тексте trace нет; при выполненных prereq это соответствует штатному web search WebUI (включая Tavily). **Notes:** отдельные реплики без свежего URL могут идти без `url_text` и опираться на RAG/историю; для smoke важен тёрн, где URL добывается и попадает в инжест.
 
-### [pending] Row 8 — URL parsing
+### Row 8 — URL parsing (OK, канонический URL MWS GPT)
 
-- **Input:** `"Прочитай https://example.com и сделай summary"`
-- **Expected:** `url_text` artifact в system, ответ по содержимому
-- **Result:** _не выполнено_
+- **Input:** `"Прочитай https://mws.ru/services/mws-gpt/?utm_source=organic_google и сделай summary"` (тот же хост, что в шаге 4 `scripts/demo_benchmark.py`).
+- **Expected:** `url_text` в инжесте, prepended `system` с текстом страницы, ответ по содержимому.
+- **Result:** **OK** — оркестратор подтягивает лендинг [MWS GPT](https://mws.ru/services/mws-gpt/?utm_source=organic_google): **`ingest_complete`** с **`url_text`**, в **`system`** — заголовок **«GPT для бизнеса: LLM платформа - MWS»** и структура портала (см. Row 7 для того же семейства страниц после web search). **Notes:** query-string (`utm_source=…`) не мешает извлечению; для регрессии смотреть trace на тёрне с явным URL в user.
 
 ### Row 9 — Long-term memory (OK)
 
@@ -525,12 +530,12 @@
 - **Expected:** разные role / model_name в `X-GPTHub-Trace`
 - **Result:** **OK** — на прод-стенде в логах оркестратора зафиксированы разные маршруты: **`code_help`** → `reasoning_code_local` / **`gpt-hub-strong`** (эвристика) и **`file_analysis`** → `doc_synthesis` / **`gpt-hub-doc`** (семантика поверх эвристики `summarization`); см. также `execution_trace` / `docs/MODEL_ROUTING_POLICY.md`.
 
-### Row 11 — Manual model choice (OK)
+### Row 11 — Manual model choice (OK, прогон 2026-04-14 ~20:21 UTC)
 
 - **Prereq:** `ORCHESTRATOR_MODELS_CATALOG=all` + `AUTO_ROUTE_MODEL=false`
-- **Input:** выбрать `gpt-hub-doc` в dropdown WebUI, отправить запрос
+- **Input:** в WebUI выбран **`gpt-hub-doc`**, сообщение пользователя **«Сгенерируй пельмени»** (новый чат `13cf9760-…`).
 - **Expected:** в trace `model_used=gpt-hub-doc`, даже если classifier хотел другое
-- **Result:** **OK** — поведение зафиксировано в `FEATURE_MATRIX.md` / роутере оркестратора: при отключённом автовыборе фасадная модель из запроса проходит в цепочку (`orchestrator_fallback` / trace). Ручной прогон: включить пререквизиты в `.env`, пересоздать orchestrator, проверить `X-GPTHub-Trace` в DevTools.
+- **Result:** **OK** — в `incoming_chat_non_messages` / теле запроса к оркестратору **`model: gpt-hub-doc`**; классификатор и роутер по-прежнему предлагают **`gpt-hub-turbo`** (`task_type: simple_chat`, `reason: default_text_chat`), но в **`execution_trace`** зафиксированы **`model_used` / `selected_model`: `gpt-hub-doc`**, в **`orchestrator_fallback`** — **`auto_route_model: false`** (ручной выбор не перетёрт). LiteLLM **200**.
 
 ### Row 12 — Markdown / код (OK)
 
@@ -562,9 +567,8 @@
 - [ ] **Row 7 — Web search**: спросить что-то актуальное, например
   «какие новости сегодня?» или «what happened in AI this week?».
   Если Tavily работает — в ответе будут ссылки на источники.
-- [ ] **Row 11 — Manual model choice**: поменять `ORCHESTRATOR_MODELS_CATALOG=all`
-  и `AUTO_ROUTE_MODEL=false` в `.env`, пересобрать orchestrator, проверить
-  что в dropdown WebUI видно несколько моделей (`gpt-hub-turbo`, `gpt-hub-strong` и т.д.).
+- [x] **Row 11 — Manual model choice** (2026-04-14): `ORCHESTRATOR_MODELS_CATALOG=all`
+  + `AUTO_ROUTE_MODEL=false` в `.env`, пересоздан orchestrator; smoke **OK** — `model_used=gpt-hub-doc` при suggestion turbo; см. блок Row 11 выше.
   **Вернуть обратно после проверки!**
 
 #### B. WOW features — ручная проверка

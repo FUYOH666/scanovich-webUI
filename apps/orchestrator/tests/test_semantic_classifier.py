@@ -120,6 +120,48 @@ async def test_semantic_overrides_task_when_confident():
     assert "semantic_task_score" in out
 
 
+@pytest.mark.asyncio
+async def test_semantic_embedding_includes_transcript_artifacts():
+    """Placeholder-only user text + ingest transcript: embed the spoken question."""
+    import gpthub_orchestrator.semantic_classifier as sem
+
+    sem._proto_cache = None
+    s = _make_settings()
+    messages = [{"role": "user", "content": "Прикреплённые документы: transcript — 1"}]
+    artifacts = [
+        {"type": "transcript", "title": "Recording.wav", "content": "What is the capital of France?"},
+    ]
+    captured: dict[str, str] = {}
+
+    async def fake_embed_texts(
+        _http: httpx.AsyncClient,
+        *,
+        settings: Settings,
+        texts: list[str],
+    ) -> list[list[float]]:
+        return [_stub_vec(t) for t in texts]
+
+    async def fake_embed_one(
+        _http: httpx.AsyncClient,
+        *,
+        settings: Settings,
+        text: str,
+    ) -> list[float]:
+        captured["text"] = text
+        return _stub_vec(text)
+
+    async with httpx.AsyncClient() as http:
+        with (
+            patch("gpthub_orchestrator.semantic_classifier.embed_texts", side_effect=fake_embed_texts),
+            patch("gpthub_orchestrator.semantic_classifier.embed_one", side_effect=fake_embed_one),
+        ):
+            _out, _src = await classify_messages_for_route(
+                messages, s, http, ingest_artifacts=artifacts
+            )
+
+    assert "France" in captured.get("text", "")
+
+
 @pytest.mark.parametrize(
     "override_locked",
     [pytest.param(False, id="override_false"), pytest.param(True, id="override_true")],

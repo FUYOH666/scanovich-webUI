@@ -291,7 +291,7 @@ def main() -> int:
         "messages": [
             {
                 "role": "user",
-                "content": "Прочитай https://example.com и скажи о чём страница одним предложением.",
+                "content": "Прочитай https://mws.ru/services/mws-gpt/?utm_source=organic_google и скажи о чём страница одним предложением.",
             },
         ],
     }

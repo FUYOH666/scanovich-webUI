@@ -315,6 +315,7 @@ async def chat_completions(
         body["messages"],
         settings,
         http,
+        ingest_artifacts=ingest_artifacts,
     )
     router_suggestion = choose_model(classification, settings)
     clock_prefix, server_clock_iso = build_session_clock_block(settings)

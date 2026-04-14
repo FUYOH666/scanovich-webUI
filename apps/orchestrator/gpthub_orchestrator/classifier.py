@@ -208,14 +208,47 @@ def _has_image_part(content: Any) -> bool:
     return False
 
 
-def classify_messages(messages: list[dict[str, Any]]) -> dict[str, Any]:
+def merge_transcript_artifacts_into_user_text(
+    last_user: str,
+    artifacts: list[dict[str, Any]] | None,
+) -> str:
+    """Append ASR transcript text so routing sees spoken intent, not only WebUI placeholders."""
+    if not artifacts:
+        return last_user
+    transcripts: list[str] = []
+    for a in artifacts:
+        if not isinstance(a, dict):
+            continue
+        if a.get("type") != "transcript":
+            continue
+        t = str(a.get("content", "")).strip()
+        if t:
+            transcripts.append(t)
+    if not transcripts:
+        return last_user
+    tail = "\n".join(transcripts)
+    base = last_user.strip()
+    if not base:
+        return tail
+    return f"{base}\n{tail}"
+
+
+def classify_messages(
+    messages: list[dict[str, Any]],
+    *,
+    ingest_artifacts: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Return modalities, task_type, complexity_hint for trace + router."""
-    has_image = any(_has_image_part(m.get("content")) for m in messages)
-    last_user = ""
+    last_user_msg: dict[str, Any] | None = None
     for m in reversed(messages):
         if m.get("role") == "user":
-            last_user = _message_text(m)
+            last_user_msg = m
             break
+
+    last_user = _message_text(last_user_msg) if last_user_msg else ""
+    # Image modality follows the current turn only — older turns with screenshots must not
+    # force vision routing when the latest user message is text/files-only (e.g. PDF after VLM).
+    has_image = _has_image_part(last_user_msg.get("content")) if last_user_msg else False
 
     # Open WebUI embeds full <chat_history> (incl. RAG/web scrape noise). Do not run
     # doc/code/analyze heuristics on that blob — e.g. "compare" from leaderboard nav
@@ -237,6 +270,8 @@ def classify_messages(messages: list[dict[str, Any]]) -> dict[str, Any]:
             extra={"extra": json.dumps(log_payload, ensure_ascii=False)},
         )
         return out
+
+    last_user = merge_transcript_artifacts_into_user_text(last_user, ingest_artifacts)
 
     lower = last_user.lower()
     code_hints = any(

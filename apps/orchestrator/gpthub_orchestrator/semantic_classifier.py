@@ -22,7 +22,7 @@ from typing import Any
 
 import httpx
 
-from gpthub_orchestrator.classifier import classify_messages
+from gpthub_orchestrator.classifier import classify_messages, merge_transcript_artifacts_into_user_text
 from gpthub_orchestrator.council import is_open_webui_internal_completion_user_text
 from gpthub_orchestrator.memory.embeddings import EmbeddingError, embed_one, embed_texts
 from gpthub_orchestrator.memory.store import cosine_similarity
@@ -402,12 +402,21 @@ async def classify_messages_for_route(
     messages: list[dict[str, Any]],
     settings: Settings,
     http: httpx.AsyncClient,
+    *,
+    ingest_artifacts: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], str]:
     """Heuristic classification, optionally overridden by embedding similarity to prototypes."""
-    base = classify_messages(messages)
-    last_user = _last_user_text(messages).strip()
-    if last_user:
-        amb_task = ambiguous_ru_exact_task_type(last_user)
+    base = classify_messages(messages, ingest_artifacts=ingest_artifacts)
+    raw_last = _last_user_text(messages).strip()
+    is_synthetic = bool(raw_last and is_open_webui_internal_completion_user_text(raw_last))
+    routing_text = (
+        raw_last
+        if is_synthetic
+        else merge_transcript_artifacts_into_user_text(raw_last, ingest_artifacts).strip()
+    )
+
+    if routing_text and not is_synthetic:
+        amb_task = ambiguous_ru_exact_task_type(routing_text)
         if amb_task is not None:
             out = dict(base)
             out["task_type"] = amb_task
@@ -444,7 +453,7 @@ async def classify_messages_for_route(
         )
         return base, "heuristic"
 
-    if not last_user:
+    if not routing_text:
         _log_classifier_route(
             "heuristic",
             "semantic_skipped_empty_user_text",
@@ -453,7 +462,7 @@ async def classify_messages_for_route(
         return base, "heuristic"
 
     # Synthetic Open WebUI completions: never embed the full blob (task + history).
-    if is_open_webui_internal_completion_user_text(last_user):
+    if is_synthetic:
         _log_classifier_route(
             "heuristic",
             "semantic_skipped_open_webui_synthetic_prompt",
@@ -461,7 +470,7 @@ async def classify_messages_for_route(
         )
         return base, "heuristic"
 
-    semantic_input = clean_user_text_for_semantic_routing(last_user)
+    semantic_input = clean_user_text_for_semantic_routing(routing_text)
     if not semantic_input:
         _log_classifier_route(
             "heuristic",
