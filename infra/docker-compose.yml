@@ -98,8 +98,14 @@ services:
     env_file:
       - path: ../.env
         required: true
+      - path: ../.env.mws.local
+        required: false
     environment:
       OPENAI_API_BASE_URL: http://orchestrator:8000/v1
+      AUDIO_STT_ENGINE: openai
+      AUDIO_STT_OPENAI_API_BASE_URL: ${MWS_GPT_API_BASE:-https://api.gpt.mws.ru/v1}
+      AUDIO_STT_OPENAI_API_KEY: ${MWS_GPT_API_KEY}
+      AUDIO_STT_MODEL: ${ORCHESTRATOR_ASR_MODEL:-whisper-medium}
     ports:
       - "3000:8080"
     extra_hosts:
