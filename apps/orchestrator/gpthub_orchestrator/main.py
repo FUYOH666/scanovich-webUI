@@ -87,6 +87,11 @@ from gpthub_orchestrator.response_preamble_strip import strip_known_cot_preamble
 from gpthub_orchestrator.ingest.pipeline import run_ingest_pipeline
 from gpthub_orchestrator.trace import build_trace, trace_to_header_value
 from gpthub_orchestrator.payload_log import log_full_chat_completion_request
+from gpthub_orchestrator.webui_status import (
+    WebuiStatusBridge,
+    wrap_async_sse_with_webui_complete,
+    wrap_sync_sse_with_webui_complete,
+)
 
 logger = logging.getLogger("gpthub_orchestrator")
 
@@ -314,6 +319,7 @@ async def chat_completions(
     router_suggestion = choose_model(classification, settings)
     clock_prefix, server_clock_iso = build_session_clock_block(settings)
     auth_header = request.headers.get("Authorization", "")
+    webui_bridge = WebuiStatusBridge.for_request(request, http, settings)
 
     # Memory command short-circuit: «запомни / забудь / что ты помнишь».
     memory_store: MemoryStore | None = getattr(request.app.state, "memory_store", None)
@@ -321,57 +327,66 @@ async def chat_completions(
         mem_cmd = try_parse_command(body["messages"])
         if mem_cmd is not None:
             user_id = resolve_user_id(body["messages"])
+            mem_result = None
+            await webui_bridge.working("Обновляю память…")
             try:
-                mem_result = await execute_memory_command(
-                    mem_cmd,
-                    store=memory_store,
-                    user_id=user_id,
-                    http=http,
-                    settings=settings,
-                )
-            except Exception as e:  # noqa: BLE001
-                logger.warning("memory_command_failed kind=%s err=%s", mem_cmd.kind, e)
-            else:
-                model_vis = client_visible_model_id(body, settings.orchestrator_public_model_id)
-                mem_fb = {
-                    "enabled": False,
-                    "short_circuit": "memory_command",
-                    "memory_kind": mem_result.kind,
-                    "memory_fact_count": mem_result.fact_count,
-                }
-                trace = build_trace(
-                    classification=classification,
-                    router_suggestion=router_suggestion,
-                    model_used=model_vis,
-                    artifacts=ingest_artifacts,
-                    orchestrator_fallback=mem_fb,
-                    prompt_version=load_role_prompts(settings.role_prompts_path).prompt_version,
-                    classifier_source=classifier_source,
-                    server_clock_iso=server_clock_iso,
-                    ingest_ms=ingest_ms,
-                )
-                logger.info("execution_trace %s", json.dumps(trace, ensure_ascii=False))
-                trace_hdr = trace_to_header_value(trace)
-                if bool(body.get("stream")):
-                    chunks = build_memory_sse_chunks(model_vis, mem_result.reply_text)
-
-                    async def memory_sse():
-                        for ch in chunks:
-                            yield ch
-
-                    return StreamingResponse(
-                        memory_sse(),
-                        media_type="text/event-stream",
-                        headers={"X-GPTHub-Trace": trace_hdr},
+                try:
+                    mem_result = await execute_memory_command(
+                        mem_cmd,
+                        store=memory_store,
+                        user_id=user_id,
+                        http=http,
+                        settings=settings,
                     )
-                out = build_memory_chat_completion(
-                    model_label=model_vis,
-                    text=mem_result.reply_text,
-                )
-                return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("memory_command_failed kind=%s err=%s", mem_cmd.kind, e)
+                    mem_result = None
+                if mem_result is not None:
+                    model_vis = client_visible_model_id(body, settings.orchestrator_public_model_id)
+                    mem_fb = {
+                        "enabled": False,
+                        "short_circuit": "memory_command",
+                        "memory_kind": mem_result.kind,
+                        "memory_fact_count": mem_result.fact_count,
+                    }
+                    trace = build_trace(
+                        classification=classification,
+                        router_suggestion=router_suggestion,
+                        model_used=model_vis,
+                        artifacts=ingest_artifacts,
+                        orchestrator_fallback=mem_fb,
+                        prompt_version=load_role_prompts(settings.role_prompts_path).prompt_version,
+                        classifier_source=classifier_source,
+                        server_clock_iso=server_clock_iso,
+                        ingest_ms=ingest_ms,
+                    )
+                    logger.info("execution_trace %s", json.dumps(trace, ensure_ascii=False))
+                    trace_hdr = trace_to_header_value(trace)
+                    if bool(body.get("stream")):
+                        chunks = build_memory_sse_chunks(model_vis, mem_result.reply_text)
+
+                        async def memory_sse():
+                            for ch in chunks:
+                                yield ch
+
+                        return StreamingResponse(
+                            wrap_sync_sse_with_webui_complete(webui_bridge, memory_sse()),
+                            media_type="text/event-stream",
+                            headers={"X-GPTHub-Trace": trace_hdr},
+                        )
+                    await webui_bridge.complete()
+                    out = build_memory_chat_completion(
+                        model_label=model_vis,
+                        text=mem_result.reply_text,
+                    )
+                    return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
+            finally:
+                if mem_result is None:
+                    await webui_bridge.complete()
 
     # Help short-circuit: classifier ``user_help`` — до council / image / pptx, чтобы не перехватывали пограничные фразы.
     if classification.get("task_type") == "user_help":
+        await webui_bridge.working("Готовлю справку…")
         role_prompts = load_role_prompts(settings.role_prompts_path)
         prompt_version = role_prompts.prompt_version
         model_vis = client_visible_model_id(body, settings.orchestrator_public_model_id)
@@ -396,10 +411,11 @@ async def chat_completions(
                     yield chunk
 
             return StreamingResponse(
-                help_sse(),
+                wrap_sync_sse_with_webui_complete(webui_bridge, help_sse()),
                 media_type="text/event-stream",
                 headers={"X-GPTHub-Trace": trace_hdr},
             )
+        await webui_bridge.complete()
         out = canned_chat_completion_json(model=model_vis, content=help_text)
         return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
 
@@ -422,6 +438,7 @@ async def chat_completions(
         ):
             question = extract_council_question(council_user_text)
             model_vis = client_visible_model_id(body, settings.orchestrator_public_model_id)
+            await webui_bridge.working("Собираю ответ экспертов…")
             try:
                 council_result = await run_council(
                     http,
@@ -433,7 +450,9 @@ async def chat_completions(
             except Exception as e:  # noqa: BLE001
                 logger.warning("council_run_failed err=%s", e)
                 council_result = None
-            if council_result is not None:
+            if council_result is None:
+                await webui_bridge.complete()
+            elif bool(body.get("stream")):
                 council_fb = council_result.trace_payload()
                 trace = build_trace(
                     classification=classification,
@@ -448,18 +467,33 @@ async def chat_completions(
                 )
                 logger.info("execution_trace %s", json.dumps(trace, ensure_ascii=False))
                 trace_hdr = trace_to_header_value(trace)
-                if bool(body.get("stream")):
-                    chunks = build_council_sse_chunks(model_vis, council_result.final_text)
+                chunks = build_council_sse_chunks(model_vis, council_result.final_text)
 
-                    async def council_sse():
-                        for ch in chunks:
-                            yield ch
+                async def council_sse():
+                    for ch in chunks:
+                        yield ch
 
-                    return StreamingResponse(
-                        council_sse(),
-                        media_type="text/event-stream",
-                        headers={"X-GPTHub-Trace": trace_hdr},
-                    )
+                return StreamingResponse(
+                    wrap_sync_sse_with_webui_complete(webui_bridge, council_sse()),
+                    media_type="text/event-stream",
+                    headers={"X-GPTHub-Trace": trace_hdr},
+                )
+            else:
+                council_fb = council_result.trace_payload()
+                trace = build_trace(
+                    classification=classification,
+                    router_suggestion=router_suggestion,
+                    model_used=model_vis,
+                    artifacts=ingest_artifacts,
+                    orchestrator_fallback=council_fb,
+                    prompt_version=load_role_prompts(settings.role_prompts_path).prompt_version,
+                    classifier_source=classifier_source,
+                    server_clock_iso=server_clock_iso,
+                    ingest_ms=ingest_ms,
+                )
+                logger.info("execution_trace %s", json.dumps(trace, ensure_ascii=False))
+                trace_hdr = trace_to_header_value(trace)
+                await webui_bridge.complete()
                 out = build_council_chat_completion(
                     model_label=model_vis,
                     text=council_result.final_text,
@@ -488,6 +522,7 @@ async def chat_completions(
                 else image_intent_user_text.strip()
             )
             model_vis = client_visible_model_id(body, settings.orchestrator_public_model_id)
+            await webui_bridge.working("Генерирую изображение…")
             try:
                 image_ref, mws_model = await generate_image_via_mws(
                     http,
@@ -496,6 +531,7 @@ async def chat_completions(
                 )
             except ImageGenError as e:
                 logger.warning("image_gen_failed err=%s", e)
+                await webui_bridge.complete()
                 # Fall through to normal chat routing; do not raise to client.
             else:
                 trace = build_trace(
@@ -519,10 +555,11 @@ async def chat_completions(
                             yield ch
 
                     return StreamingResponse(
-                        image_sse(),
+                        wrap_sync_sse_with_webui_complete(webui_bridge, image_sse()),
                         media_type="text/event-stream",
                         headers={"X-GPTHub-Trace": trace_hdr},
                     )
+                await webui_bridge.complete()
                 out = build_image_chat_completion(
                     model_label=model_vis,
                     prompt=img_prompt,
@@ -533,13 +570,14 @@ async def chat_completions(
     # PPTX short-circuit: slide-plan via LiteLLM (strong chain) + python-pptx (after image intent).
     # Classifier uses ``pptx_generation`` when ``is_pptx_request`` matches; weaker cues → ``pptx`` only.
     if settings.pptx_gen_enabled and classification.get("task_type") in ("pptx", "pptx_generation"):
+        await webui_bridge.working("Собираю презентацию…")
         model_vis = client_visible_model_id(body, settings.orchestrator_public_model_id)
         prompt_version = load_role_prompts(settings.role_prompts_path).prompt_version
         pptx_user_err = (
             "Не удалось собрать презентацию. Попробуйте упростить запрос или повторить позже."
         )
 
-        def _pptx_error_response(pptx_meta: dict[str, Any]) -> Response:
+        async def _pptx_error_response(pptx_meta: dict[str, Any]) -> Response:
             trace = build_trace(
                 classification=classification,
                 router_suggestion=router_suggestion,
@@ -560,10 +598,11 @@ async def chat_completions(
                         yield ch
 
                 return StreamingResponse(
-                    pptx_err_sse(),
+                    wrap_sync_sse_with_webui_complete(webui_bridge, pptx_err_sse()),
                     media_type="text/event-stream",
                     headers={"X-GPTHub-Trace": trace_hdr},
                 )
+            await webui_bridge.complete()
             out = build_pptx_error_chat_completion(model_label=model_vis, message=pptx_user_err)
             return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
 
@@ -610,17 +649,17 @@ async def chat_completions(
                 )
         except TimeoutError:
             logger.warning("pptx_gen_failed err=timeout")
-            return _pptx_error_response({"status": "error", "reason": "timeout"})
+            return await _pptx_error_response({"status": "error", "reason": "timeout"})
         except PptxGenError as e:
             reason = str(e) if e.args else "unknown"
             if reason == "slide_plan_json_invalid":
                 logger.warning("pptx_plan_invalid err=%s", e)
             else:
                 logger.warning("pptx_gen_failed err=%s", e)
-            return _pptx_error_response({"status": "error", "reason": reason})
+            return await _pptx_error_response({"status": "error", "reason": reason})
         except Exception as e:  # noqa: BLE001
             logger.warning("pptx_gen_failed err=%s", e)
-            return _pptx_error_response({"status": "error", "reason": type(e).__name__})
+            return await _pptx_error_response({"status": "error", "reason": type(e).__name__})
         else:
             trace = build_trace(
                 classification=classification,
@@ -666,10 +705,11 @@ async def chat_completions(
                         yield ch
 
                 return StreamingResponse(
-                    pptx_ok_sse(),
+                    wrap_sync_sse_with_webui_complete(webui_bridge, pptx_ok_sse()),
                     media_type="text/event-stream",
                     headers={"X-GPTHub-Trace": trace_hdr},
                 )
+            await webui_bridge.complete()
             out = build_pptx_chat_completion(
                 model_label=model_vis,
                 plan=plan,
@@ -679,6 +719,7 @@ async def chat_completions(
             return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
 
     if settings.greeting_canned_response_enabled and greeting_canned_eligible(classification):
+        await webui_bridge.working("Готовлю ответ…")
         role_prompts = load_role_prompts(settings.role_prompts_path)
         prompt_version = role_prompts.prompt_version
         model_vis = client_visible_model_id(body, settings.orchestrator_public_model_id)
@@ -704,10 +745,11 @@ async def chat_completions(
                     yield chunk
 
             return StreamingResponse(
-                canned_sse(),
+                wrap_sync_sse_with_webui_complete(webui_bridge, canned_sse()),
                 media_type="text/event-stream",
                 headers={"X-GPTHub-Trace": trace_hdr},
             )
+        await webui_bridge.complete()
         out = canned_chat_completion_json(model=model_vis, content=canned_text)
         return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
 
@@ -772,6 +814,8 @@ async def chat_completions(
 
     stream = bool(body.get("stream"))
     url = f"{settings.litellm_base_url.rstrip('/')}/v1/chat/completions"
+
+    await webui_bridge.working("Формирую ответ…")
 
     if stream:
         stream_fb: dict[str, Any] = {
@@ -860,73 +904,35 @@ async def chat_completions(
                 yield b"data: [DONE]\n\n"
 
         return StreamingResponse(
-            passthrough(),
+            wrap_async_sse_with_webui_complete(webui_bridge, passthrough()),
             media_type="text/event-stream",
             headers={"X-GPTHub-Trace": trace_to_header_value(trace)},
         )
 
-    use_chain = (
-        settings.auto_route_model
-        and settings.orchestrator_litellm_fallback
-        and len(chain) > 0
-    )
-    max_t = min(len(chain), settings.orchestrator_fallback_max_attempts) if use_chain else 1
-
-    if not use_chain:
-        trace = build_trace(
-            classification=classification,
-            router_suggestion=router_suggestion,
-            model_used=model_used,
-            artifacts=ingest_artifacts,
-            prompt_version=prompt_version,
-            classifier_source=classifier_source,
-            server_clock_iso=server_clock_iso,
-            ingest_ms=ingest_ms,
+    async def _non_stream_litellm() -> Response:
+        use_chain = (
+            settings.auto_route_model
+            and settings.orchestrator_litellm_fallback
+            and len(chain) > 0
         )
-        logger.info("execution_trace %s", json.dumps(trace, ensure_ascii=False))
-        resp = await http.post(url, json=body, headers={"Authorization": auth_header})
-        if resp.status_code >= 400:
-            logger.warning("litellm_error %s %s", resp.status_code, resp.text[:500])
-            return _error_json_response(resp)
-        out = resp.json()
-        if isinstance(out, dict):
-            _apply_reasoning_strip_to_completion(out, settings)
-            _apply_preamble_strip_to_completion(out, settings)
-        return JSONResponse(
-            content=out,
-            headers={"X-GPTHub-Trace": trace_to_header_value(trace)},
-        )
+        max_t = min(len(chain), settings.orchestrator_fallback_max_attempts) if use_chain else 1
 
-    attempts_log: list[dict[str, Any]] = []
-    last_resp: httpx.Response | None = None
-    winning_model = model_used
-
-    for i in range(max_t):
-        alias = chain[i]
-        body_attempt = dict(body)
-        body_attempt["model"] = alias
-        winning_model = alias
-        resp = await http.post(url, json=body_attempt, headers={"Authorization": auth_header})
-        attempts_log.append({"model": alias, "status_code": resp.status_code})
-        if resp.status_code < 400:
-            fb_meta: dict[str, Any] = {
-                "enabled": True,
-                "attempts": attempts_log,
-                "model_selected": alias,
-                "retries_after_failure": max(0, i),
-            }
+        if not use_chain:
             trace = build_trace(
                 classification=classification,
                 router_suggestion=router_suggestion,
-                model_used=winning_model,
+                model_used=model_used,
                 artifacts=ingest_artifacts,
-                orchestrator_fallback=fb_meta,
                 prompt_version=prompt_version,
                 classifier_source=classifier_source,
                 server_clock_iso=server_clock_iso,
                 ingest_ms=ingest_ms,
             )
             logger.info("execution_trace %s", json.dumps(trace, ensure_ascii=False))
+            resp = await http.post(url, json=body, headers={"Authorization": auth_header})
+            if resp.status_code >= 400:
+                logger.warning("litellm_error %s %s", resp.status_code, resp.text[:500])
+                return _error_json_response(resp)
             out = resp.json()
             if isinstance(out, dict):
                 _apply_reasoning_strip_to_completion(out, settings)
@@ -935,45 +941,89 @@ async def chat_completions(
                 content=out,
                 headers={"X-GPTHub-Trace": trace_to_header_value(trace)},
             )
-        last_resp = resp
-        logger.warning(
-            "litellm_attempt_failed status=%s model=%s body_preview=%s",
-            resp.status_code,
-            alias,
-            resp.text[:300],
-        )
-        if i < max_t - 1 and _retryable_litellm_status(resp.status_code):
-            continue
-        break
 
-    assert last_resp is not None
-    fb_meta = {
-        "enabled": True,
-        "attempts": attempts_log,
-        "failed": True,
-    }
-    trace = build_trace(
-        classification=classification,
-        router_suggestion=router_suggestion,
-        model_used=winning_model,
-        artifacts=ingest_artifacts,
-        orchestrator_fallback=fb_meta,
-        prompt_version=prompt_version,
-        classifier_source=classifier_source,
-        server_clock_iso=server_clock_iso,
-        ingest_ms=ingest_ms,
-    )
-    logger.info("execution_trace %s", json.dumps(trace, ensure_ascii=False))
-    logger.warning("litellm_error %s %s", last_resp.status_code, last_resp.text[:500])
-    trace_hdr = trace_to_header_value(trace)
-    err_resp = _error_json_response(last_resp)
-    err_payload: Any
-    if isinstance(err_resp.body, (bytes, memoryview)):
-        err_payload = json.loads(bytes(err_resp.body).decode("utf-8"))
-    else:
-        err_payload = err_resp.body
-    return JSONResponse(
-        status_code=err_resp.status_code,
-        content=err_payload,
-        headers={**dict(err_resp.headers), "X-GPTHub-Trace": trace_hdr},
-    )
+        attempts_log: list[dict[str, Any]] = []
+        last_resp: httpx.Response | None = None
+        winning_model = model_used
+
+        for i in range(max_t):
+            alias = chain[i]
+            body_attempt = dict(body)
+            body_attempt["model"] = alias
+            winning_model = alias
+            resp = await http.post(url, json=body_attempt, headers={"Authorization": auth_header})
+            attempts_log.append({"model": alias, "status_code": resp.status_code})
+            if resp.status_code < 400:
+                fb_meta: dict[str, Any] = {
+                    "enabled": True,
+                    "attempts": attempts_log,
+                    "model_selected": alias,
+                    "retries_after_failure": max(0, i),
+                }
+                trace = build_trace(
+                    classification=classification,
+                    router_suggestion=router_suggestion,
+                    model_used=winning_model,
+                    artifacts=ingest_artifacts,
+                    orchestrator_fallback=fb_meta,
+                    prompt_version=prompt_version,
+                    classifier_source=classifier_source,
+                    server_clock_iso=server_clock_iso,
+                    ingest_ms=ingest_ms,
+                )
+                logger.info("execution_trace %s", json.dumps(trace, ensure_ascii=False))
+                out = resp.json()
+                if isinstance(out, dict):
+                    _apply_reasoning_strip_to_completion(out, settings)
+                    _apply_preamble_strip_to_completion(out, settings)
+                return JSONResponse(
+                    content=out,
+                    headers={"X-GPTHub-Trace": trace_to_header_value(trace)},
+                )
+            last_resp = resp
+            logger.warning(
+                "litellm_attempt_failed status=%s model=%s body_preview=%s",
+                resp.status_code,
+                alias,
+                resp.text[:300],
+            )
+            if i < max_t - 1 and _retryable_litellm_status(resp.status_code):
+                continue
+            break
+
+        assert last_resp is not None
+        fb_meta = {
+            "enabled": True,
+            "attempts": attempts_log,
+            "failed": True,
+        }
+        trace = build_trace(
+            classification=classification,
+            router_suggestion=router_suggestion,
+            model_used=winning_model,
+            artifacts=ingest_artifacts,
+            orchestrator_fallback=fb_meta,
+            prompt_version=prompt_version,
+            classifier_source=classifier_source,
+            server_clock_iso=server_clock_iso,
+            ingest_ms=ingest_ms,
+        )
+        logger.info("execution_trace %s", json.dumps(trace, ensure_ascii=False))
+        logger.warning("litellm_error %s %s", last_resp.status_code, last_resp.text[:500])
+        trace_hdr = trace_to_header_value(trace)
+        err_resp = _error_json_response(last_resp)
+        err_payload: Any
+        if isinstance(err_resp.body, (bytes, memoryview)):
+            err_payload = json.loads(bytes(err_resp.body).decode("utf-8"))
+        else:
+            err_payload = err_resp.body
+        return JSONResponse(
+            status_code=err_resp.status_code,
+            content=err_payload,
+            headers={**dict(err_resp.headers), "X-GPTHub-Trace": trace_hdr},
+        )
+
+    try:
+        return await _non_stream_litellm()
+    finally:
+        await webui_bridge.complete()

@@ -175,6 +175,34 @@ class Settings(BaseSettings):
         min_length=1,
         description="Path prefix in Open WebUI's file.path; replaced by orchestrator_open_webui_data_mount when reading.",
     )
+    orchestrator_webui_status_enabled: bool = Field(
+        default=False,
+        description=(
+            "If true, POST type=status events to Open WebUI when chat/message id headers are present "
+            "(requires ENABLE_FORWARD_USER_INFO_HEADERS in WebUI and patched forwarding of message_id)."
+        ),
+    )
+    orchestrator_webui_base_url: str = Field(
+        default="",
+        description=(
+            "Open WebUI base URL reachable from this process (Docker: http://gpthub-prod-open-webui:8080). "
+            "No trailing slash."
+        ),
+    )
+    gpthub_internal_event_secret: str = Field(
+        default="",
+        description=(
+            "Shared with Open WebUI GPTHUB_INTERNAL_EVENT_SECRET; "
+            "POST /api/v1/internal/gpthub/chats/.../messages/.../event (preferred over user API key)."
+        ),
+    )
+    orchestrator_webui_event_api_key: str = Field(
+        default="",
+        description=(
+            "Optional Bearer sk- key for WebUI POST /api/v1/chats/.../event "
+            "if gpthub_internal_event_secret is unset."
+        ),
+    )
     image_gen_enabled: bool = Field(
         default=True,
         description="If true, orchestrator detects image-generation intent and calls MWS /images/generations directly.",
@@ -404,6 +432,18 @@ class Settings(BaseSettings):
     @classmethod
     def strip_canned_message(cls, v: str) -> str:
         return v.strip()
+
+    @field_validator(
+        "orchestrator_webui_base_url",
+        "orchestrator_webui_event_api_key",
+        "gpthub_internal_event_secret",
+        mode="before",
+    )
+    @classmethod
+    def strip_webui_optional_str(cls, v: object) -> str:
+        if v is None:
+            return ""
+        return str(v).strip()
 
     @field_validator(
         "orchestrator_asr_base_url",
