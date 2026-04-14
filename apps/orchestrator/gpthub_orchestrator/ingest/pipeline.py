@@ -6,6 +6,7 @@ import asyncio
 import copy
 import json
 import logging
+from collections import Counter
 import time
 from typing import Any
 
@@ -154,7 +155,14 @@ def _artifact_for_trace(a: dict[str, Any]) -> dict[str, Any]:
 
 
 def _build_artifact_system_message(artifacts: list[dict[str, Any]]) -> dict[str, Any]:
-    lines = ["## GPTHub ingested context (orchestrator)", ""]
+    lines = [
+        "## GPTHub ingested context (orchestrator)",
+        "",
+        "### Policy (this turn)",
+        "**EN:** Answer primarily from the attachments / ingest blocks below. Treat earlier chat turns as secondary unless the user clearly refers to them. If sources disagree, prefer the material in this section (newest ingest wins).",
+        "**RU:** Отвечай в первую очередь по вложениям и тексту ниже. Предыдущие реплики чата — вторичны, пока пользователь явно к ним не обращается. При противоречии приоритет у материала в этом тексте.",
+        "",
+    ]
     for a in artifacts:
         t = a.get("type")
         title = a.get("title", "")
@@ -164,6 +172,33 @@ def _build_artifact_system_message(artifacts: list[dict[str, Any]]) -> dict[str,
         lines.append("")
     body = "\n".join(lines).strip()
     return {"role": "system", "content": body}
+
+
+def _append_ingest_attachment_summary_to_user(
+    msgs: list[dict[str, Any]],
+    user_idx: int,
+    artifacts: list[dict[str, Any]],
+) -> None:
+    """Append a short RU line with artifact types and counts so the last user turn is non-empty for routing."""
+    if not artifacts:
+        return
+    counts = Counter(str(a.get("type") or "unknown") for a in artifacts)
+    summary = ", ".join(f"{t} — {n}" for t, n in sorted(counts.items()))
+    tail = f"Прикреплённые документы: {summary}"
+    msg = msgs[user_idx]
+    content = msg.get("content")
+    if isinstance(content, str):
+        base = content.rstrip()
+        msg["content"] = f"{base}\n\n{tail}" if base else tail
+    elif isinstance(content, list):
+        if content and isinstance(content[-1], dict) and content[-1].get("type") == "text":
+            prev = str(content[-1].get("text") or "").rstrip()
+            content[-1]["text"] = f"{prev}\n\n{tail}" if prev else tail
+        else:
+            content.append({"type": "text", "text": tail})
+        msg["content"] = content
+    else:
+        msg["content"] = tail
 
 
 def _parse_pdf_sync(item: FileWorkItem, settings: Settings) -> str:
@@ -407,6 +442,8 @@ async def run_ingest_pipeline(
         strip_content_indices(msgs, user_idx, drop_indices)
     if user_idx is not None and owui_items:
         msgs[user_idx].pop("files", None)
+    if user_idx is not None:
+        _append_ingest_attachment_summary_to_user(msgs, user_idx, artifacts)
     sys_msg = _build_artifact_system_message(artifacts)
     msgs.insert(0, sys_msg)
 
