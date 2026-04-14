@@ -23,11 +23,35 @@ from typing import Any
 import httpx
 
 from gpthub_orchestrator.classifier import classify_messages
+from gpthub_orchestrator.council import is_open_webui_internal_completion_user_text
 from gpthub_orchestrator.memory.embeddings import EmbeddingError, embed_one, embed_texts
 from gpthub_orchestrator.memory.store import cosine_similarity
 from gpthub_orchestrator.settings import Settings
 
 logger = logging.getLogger(__name__)
+
+# Open WebUI (and similar) embed prior turns inside this block; it poisons embedding similarity.
+_CHAT_HISTORY_BLOCK = re.compile(
+    r"<chat_history>\s*.*?\s*</chat_history>",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def clean_user_text_for_semantic_routing(raw: str) -> str:
+    """Remove synthetic context blocks before embedding the last user turn.
+
+    Heuristic routing in ``classify_messages`` still sees the full message; only the
+    semantic embedding path uses this trimmed text.
+    """
+    if not raw:
+        return ""
+    s = raw.strip()
+    if not s:
+        return ""
+    s = _CHAT_HISTORY_BLOCK.sub("", s)
+    s = re.sub(r"[ \t]+\n", "\n", s)
+    s = re.sub(r"\n{3,}", "\n\n", s).strip()
+    return s
 
 
 def _log_classifier_route(
@@ -428,9 +452,27 @@ async def classify_messages_for_route(
         )
         return base, "heuristic"
 
+    # Synthetic Open WebUI completions: never embed the full blob (task + history).
+    if is_open_webui_internal_completion_user_text(last_user):
+        _log_classifier_route(
+            "heuristic",
+            "semantic_skipped_open_webui_synthetic_prompt",
+            heuristic_task_type=base.get("task_type"),
+        )
+        return base, "heuristic"
+
+    semantic_input = clean_user_text_for_semantic_routing(last_user)
+    if not semantic_input:
+        _log_classifier_route(
+            "heuristic",
+            "semantic_skipped_empty_after_context_strip",
+            heuristic_task_type=base.get("task_type"),
+        )
+        return base, "heuristic"
+
     try:
         by_task = await _prototype_vectors_by_task(http, settings)
-        qv = await embed_one(http, settings=settings, text=last_user[:8000])
+        qv = await embed_one(http, settings=settings, text=semantic_input[:8000])
     except EmbeddingError as e:
         _log_classifier_route(
             "semantic_fallback",
@@ -446,7 +488,7 @@ async def classify_messages_for_route(
     accept, accept_reason, best, margin, lead_over_h = _semantic_acceptance(
         scores, best_task, h_task, settings
     )
-    text_preview = _preview_user_text(last_user)
+    text_preview = _preview_user_text(semantic_input)
     top_scores = json.dumps(
         {k: round(v, 4) for k, v in sorted(scores.items(), key=lambda x: -x[1])[:8]},
         ensure_ascii=False,

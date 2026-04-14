@@ -1,7 +1,7 @@
 # GPTHub Prod — runs scripts/demo.sh. Loads ORCHESTRATOR_API_KEY from .env
 # (ORCHESTRATOR_API_KEY or LITELLM_MASTER_KEY) when not already in the environment.
 
-.PHONY: help demo demo-baseline docker-rebuild docker-rebuild-rag docker-reset docker-logs-save docker-logs-filter-health pptx-bench-nature
+.PHONY: help demo demo-baseline demo-benchmark docker-rebuild docker-rebuild-rag docker-reset docker-logs-save docker-logs-filter-health pptx-bench-nature
 
 ORCHESTRATOR_URL ?= http://localhost:8089
 COMPOSE_FILE ?= infra/docker-compose.yml
@@ -14,6 +14,7 @@ help:
 	@echo "Targets:"
 	@echo "  make demo              - scripts/demo.sh"
 	@echo "  make demo-baseline     - scripts/demo.sh --skip-wow"
+	@echo "  make demo-benchmark    - scripts/demo_benchmark.py (timed smoke)"
 	@echo "  make docker-rebuild     - docker compose build + up -d orchestrator (pick up code changes)"
 	@echo "  make docker-rebuild-rag  - same + embedding-shim (compose profile rag)"
 	@echo "  make docker-reset        - compose --profile rag down + up -d (uses infra/docker-compose.yml)"
@@ -59,6 +60,16 @@ demo:
 	  export ORCHESTRATOR_API_KEY="$$key"; \
 	  [[ -n "$$ORCHESTRATOR_API_KEY" ]] || { echo "FATAL: ORCHESTRATOR_API_KEY empty — export it or set in .env (ORCHESTRATOR_API_KEY or LITELLM_MASTER_KEY)" >&2; exit 2; }; \
 	  exec "$(CURDIR)/scripts/demo.sh" $(DEMO_EXTRA)'
+
+demo-benchmark:
+	@ORCHESTRATOR_URL="$(ORCHESTRATOR_URL)" bash -euo pipefail -c '\
+	  key="$${ORCHESTRATOR_API_KEY:-}"; \
+	  if [[ -z "$$key" && -f "$(CURDIR)/.env" ]]; then \
+	    key="$$(python3 "$(CURDIR)/scripts/read_env_key.py" "$(CURDIR)/.env")"; \
+	  fi; \
+	  export ORCHESTRATOR_API_KEY="$$key"; \
+	  [[ -n "$$ORCHESTRATOR_API_KEY" ]] || { echo "FATAL: ORCHESTRATOR_API_KEY empty — export it or set in .env (ORCHESTRATOR_API_KEY or LITELLM_MASTER_KEY)" >&2; exit 2; }; \
+	  exec python3 "$(CURDIR)/scripts/demo_benchmark.py"'
 
 docker-reset:
 	docker compose -f "$(CURDIR)/$(COMPOSE_FILE)" --profile rag down

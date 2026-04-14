@@ -8,7 +8,11 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from gpthub_orchestrator.semantic_classifier import SEMANTIC_TASK_PROTOTYPES, classify_messages_for_route
+from gpthub_orchestrator.semantic_classifier import (
+    SEMANTIC_TASK_PROTOTYPES,
+    classify_messages_for_route,
+    clean_user_text_for_semantic_routing,
+)
 from gpthub_orchestrator.settings import Settings
 
 
@@ -220,3 +224,81 @@ async def test_override_locked_true_matches_env_semantic_thresholds(threshold_pr
     assert src == "semantic"
     assert out["task_type"] == "code_help"
     assert s.classifier_semantic_override_locked_heuristic is True
+
+
+def test_clean_user_text_strips_chat_history_block() -> None:
+    raw = (
+        "Самый счастливый человек это кто\n\n"
+        "<chat_history>\n"
+        "USER: Сгенерируй картинку кота\n"
+        "ASSISTANT: ок\n"
+        "</chat_history>"
+    )
+    cleaned = clean_user_text_for_semantic_routing(raw)
+    assert cleaned == "Самый счастливый человек это кто"
+    assert "картинку" not in cleaned
+
+
+@pytest.mark.asyncio
+async def test_semantic_skips_open_webui_synthetic_user_prompt() -> None:
+    """Follow-up / title-style blobs must not call embeddings."""
+    import gpthub_orchestrator.semantic_classifier as sem
+
+    sem._proto_cache = None
+    s = _make_settings()
+    blob = (
+        "### Task:\n"
+        "Suggest 3-5 relevant follow-up questions or prompts that the user might naturally ask next\n"
+        "### Chat History:\n<chat_history>\nUSER: hello\nASSISTANT: hi\n</chat_history>\n"
+    )
+    messages = [{"role": "user", "content": blob}]
+    async with httpx.AsyncClient() as http:
+        with patch("gpthub_orchestrator.semantic_classifier.embed_one", new_callable=AsyncMock) as em_one:
+            with patch("gpthub_orchestrator.semantic_classifier.embed_texts", new_callable=AsyncMock) as em_texts:
+                out, src = await classify_messages_for_route(messages, s, http)
+    em_one.assert_not_called()
+    em_texts.assert_not_called()
+    assert src == "heuristic"
+    assert out["task_type"] == "simple_chat"
+
+
+@pytest.mark.asyncio
+async def test_semantic_embedding_sees_clean_line_not_history() -> None:
+    import gpthub_orchestrator.semantic_classifier as sem
+
+    sem._proto_cache = None
+    s = _make_settings()
+    phrase = SEMANTIC_TASK_PROTOTYPES["code_help"][0]
+    raw = f"{phrase}\n\n<chat_history>\nUSER: нарисуй слона\n</chat_history>"
+    messages = [{"role": "user", "content": raw}]
+
+    async def fake_embed_texts(
+        _http: httpx.AsyncClient,
+        *,
+        settings: Settings,
+        texts: list[str],
+    ) -> list[list[float]]:
+        return [_stub_vec(t) for t in texts]
+
+    seen: list[str] = []
+
+    async def fake_embed_one(
+        _http: httpx.AsyncClient,
+        *,
+        settings: Settings,
+        text: str,
+    ) -> list[float]:
+        seen.append(text)
+        return _stub_vec(text)
+
+    async with httpx.AsyncClient() as http:
+        with (
+            patch("gpthub_orchestrator.semantic_classifier.embed_texts", side_effect=fake_embed_texts),
+            patch("gpthub_orchestrator.semantic_classifier.embed_one", side_effect=fake_embed_one),
+        ):
+            out, src = await classify_messages_for_route(messages, s, http)
+
+    assert src == "semantic"
+    assert seen and seen[0] == phrase
+    assert "слона" not in seen[0]
+    assert out["task_type"] == "code_help"
