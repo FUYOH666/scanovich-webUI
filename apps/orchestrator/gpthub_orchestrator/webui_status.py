@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator, Iterator
-from typing import Mapping
+from typing import Any, Mapping
 
 import httpx
 from fastapi import Request
@@ -50,6 +50,7 @@ async def emit_webui_message_status(
     message_id: str,
     description: str,
     done: bool,
+    extra: dict[str, Any] | None = None,
 ) -> None:
     base = (settings.orchestrator_webui_base_url or "").rstrip("/")
     secret = (settings.gpthub_internal_event_secret or "").strip()
@@ -65,14 +66,14 @@ async def emit_webui_message_status(
     else:
         url = f"{base}/api/v1/chats/{chat_id}/messages/{message_id}/event"
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    data: dict[str, Any] = {"description": description, "done": done, "hidden": False}
+    if extra:
+        data.update(extra)
     try:
         r = await http.post(
             url,
             headers=headers,
-            json={
-                "type": "status",
-                "data": {"description": description, "done": done, "hidden": False},
-            },
+            json={"type": "status", "data": data},
             timeout=10.0,
         )
         if r.status_code >= 400:
@@ -128,6 +129,52 @@ class WebuiStatusBridge:
             message_id=self.message_id,
             description=description,
             done=False,
+        )
+
+    async def council_phase(self, phase: str, experts_ready: int, experts_total: int) -> None:
+        """Structured Expert Council progress for Open WebUI (action=gpthub_council)."""
+        if not self.is_active() or not self.chat_id or not self.message_id:
+            return
+        if phase == "experts":
+            desc = f"Эксперты: {experts_ready}/{experts_total}"
+        elif phase == "synthesis":
+            desc = "Суммаризатор объединяет ответы…"
+        elif phase == "synthesis_fallback":
+            desc = "Готовлю ответ (fallback)…"
+        else:
+            desc = "Expert Council…"
+        await emit_webui_message_status(
+            self.http,
+            self.settings,
+            chat_id=self.chat_id,
+            message_id=self.message_id,
+            description=desc,
+            done=False,
+            extra={
+                "action": "gpthub_council",
+                "phase": phase,
+                "experts_ready": experts_ready,
+                "experts_total": experts_total,
+            },
+        )
+
+    async def pptx_slides_progress(self, slide_current: int, slide_total: int) -> None:
+        """Structured PPTX build progress (action=gpthub_pptx)."""
+        if not self.is_active() or not self.chat_id or not self.message_id:
+            return
+        desc = f"Слайдов готово: {slide_current}/{slide_total}"
+        await emit_webui_message_status(
+            self.http,
+            self.settings,
+            chat_id=self.chat_id,
+            message_id=self.message_id,
+            description=desc,
+            done=False,
+            extra={
+                "action": "gpthub_pptx",
+                "slide_current": slide_current,
+                "slide_total": slide_total,
+            },
         )
 
     async def complete(self, description: str = "Готово.") -> None:

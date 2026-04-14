@@ -31,6 +31,23 @@ def test_build_pptx_from_plan_zip_magic(pptx_settings: Settings) -> None:
     assert len(Presentation(BytesIO(blob_no_intro)).slides) == 1
 
 
+def test_build_pptx_on_slide_progress_callback(pptx_settings: Settings) -> None:
+    plan = SlidePlan(
+        slides=[
+            SlideSpec(title="A", bullets=["1"], notes=""),
+            SlideSpec(title="B", bullets=["2"], notes=""),
+        ],
+    )
+    seen: list[tuple[int, int]] = []
+
+    def on_progress(cur: int, tot: int) -> None:
+        seen.append((cur, tot))
+
+    build_pptx_from_plan(plan, settings=pptx_settings, on_slide_progress=on_progress)
+    # intro + 2 content slides => 3 callbacks, total always 3
+    assert seen == [(1, 3), (2, 3), (3, 3)]
+
+
 def test_deck_title_for_intro_prefers_presentation_title() -> None:
     plan = SlidePlan(
         presentation_title="Обзор GPTHub",

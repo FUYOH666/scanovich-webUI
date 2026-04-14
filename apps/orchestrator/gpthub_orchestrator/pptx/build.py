@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from gpthub_orchestrator.pptx.audience_templates import resolve_pptx_template_filename
@@ -293,6 +294,7 @@ def build_pptx_from_plan(
     *,
     settings: Settings,
     base_prs: Presentation | None = None,
+    on_slide_progress: Callable[[int, int], None] | None = None,
 ) -> bytes:
     if not plan.slides:
         raise PptxGenError("empty_plan")
@@ -306,12 +308,15 @@ def build_pptx_from_plan(
         )
     specs.extend(plan.slides[:MAX_SLIDES])
 
+    n_total = len(specs)
     try:
         for i, spec in enumerate(specs):
             if settings.pptx_intro_slide_enabled and i == 0:
                 _add_intro_slide_asset_layout(prs, spec)
             else:
                 _probe_first_layout_index(prs, spec, preferred_name_parts=None)
+            if on_slide_progress is not None:
+                on_slide_progress(i + 1, n_total)
     except IndexError as e:
         raise PptxGenError("pptx_no_layout") from e
 

@@ -169,6 +169,35 @@ def test_open_webui_internal_prompt_negative_plain_research() -> None:
     assert not is_open_webui_internal_completion_user_text("/research карьера в МТС")
 
 
+def test_open_webui_internal_prompt_detected_title_generation() -> None:
+    blob = (
+        "### Task:\n"
+        "Generate a concise, 3-5 word title with an emoji summarizing the chat history.\n"
+        "### Chat History:\n<chat_history>\nUSER: hello\n</chat_history>\n"
+    )
+    assert is_open_webui_internal_completion_user_text(blob)
+
+
+def test_open_webui_internal_prompt_detected_tags_generation() -> None:
+    blob = (
+        "### Task:\n"
+        "Generate 1-3 broad tags categorizing the main themes of the chat history, "
+        "along with 1-3 more specific subtopic tags.\n"
+        "### Chat History:\n<chat_history>\nUSER: hello\n</chat_history>\n"
+    )
+    assert is_open_webui_internal_completion_user_text(blob)
+
+
+def test_open_webui_internal_prompt_detected_image_prompt_task() -> None:
+    blob = (
+        "### Task:\n"
+        "Generate a detailed prompt for am image generation task based on the given language "
+        "and context.\n"
+        "### Chat History:\n<chat_history>\nUSER: hi\n</chat_history>\n"
+    )
+    assert is_open_webui_internal_completion_user_text(blob)
+
+
 def test_extract_council_question_strips_slash() -> None:
     assert (
         extract_council_question("/research RAG retrieval strategies")

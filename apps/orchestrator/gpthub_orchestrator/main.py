@@ -320,6 +320,9 @@ async def chat_completions(
     clock_prefix, server_clock_iso = build_session_clock_block(settings)
     auth_header = request.headers.get("Authorization", "")
     webui_bridge = WebuiStatusBridge.for_request(request, http, settings)
+    if is_open_webui_internal_completion_user_text(last_user_text(body["messages"])):
+        # Open WebUI title/tags/follow-up/etc. reuse the same message_id; skip status spam.
+        webui_bridge = WebuiStatusBridge(None, None, http, settings)
 
     # Memory command short-circuit: «запомни / забудь / что ты помнишь».
     memory_store: MemoryStore | None = getattr(request.app.state, "memory_store", None)
@@ -438,7 +441,6 @@ async def chat_completions(
         ):
             question = extract_council_question(council_user_text)
             model_vis = client_visible_model_id(body, settings.orchestrator_public_model_id)
-            await webui_bridge.working("Собираю ответ экспертов…")
             try:
                 council_result = await run_council(
                     http,
@@ -446,6 +448,11 @@ async def chat_completions(
                     base_url=settings.litellm_base_url,
                     auth_header=request.headers.get("Authorization", ""),
                     question=question,
+                    progress=(
+                        webui_bridge.council_phase
+                        if webui_bridge.is_active()
+                        else None
+                    ),
                 )
             except Exception as e:  # noqa: BLE001
                 logger.warning("council_run_failed err=%s", e)
@@ -626,11 +633,22 @@ async def chat_completions(
                     asyncio.to_thread(load_stripped_base_presentation, pptx_run_settings),
                 )
                 t_build = time.perf_counter()
+                loop = asyncio.get_running_loop()
+
+                def _on_slide_progress(cur: int, tot: int) -> None:
+                    if not webui_bridge.is_active():
+                        return
+                    asyncio.run_coroutine_threadsafe(
+                        webui_bridge.pptx_slides_progress(cur, tot),
+                        loop,
+                    )
+
                 pptx_blob = await asyncio.to_thread(
                     build_pptx_from_plan,
                     plan,
                     settings=pptx_run_settings,
                     base_prs=base_prs,
+                    on_slide_progress=_on_slide_progress if webui_bridge.is_active() else None,
                 )
                 logger.info(
                     "pptx_timing %s",
