@@ -8,6 +8,8 @@ import re
 from enum import Enum
 from typing import Any
 
+from gpthub_orchestrator.council import is_open_webui_internal_completion_user_text
+
 logger = logging.getLogger(__name__)
 
 # Short acknowledgments / goodbyes stay on the light chat chain.
@@ -214,6 +216,27 @@ def classify_messages(messages: list[dict[str, Any]]) -> dict[str, Any]:
         if m.get("role") == "user":
             last_user = _message_text(m)
             break
+
+    # Open WebUI embeds full <chat_history> (incl. RAG/web scrape noise). Do not run
+    # doc/code/analyze heuristics on that blob — e.g. "compare" from leaderboard nav
+    # false-triggers code_help and wastes gpt-hub-strong on JSON follow-up tasks.
+    if is_open_webui_internal_completion_user_text(last_user):
+        out = {
+            "modalities": ["text"],
+            "task_type": TaskType.SIMPLE_CHAT.value,
+            "complexity_score": 0,
+            "user_text_preview": last_user[:200],
+        }
+        log_payload = {
+            **out,
+            "classifier_layer": "heuristic_rule_based",
+            "classifier_source_resolved_by": "classifier.open_webui_synthetic_user_prompt",
+        }
+        logger.info(
+            "modality_classified",
+            extra={"extra": json.dumps(log_payload, ensure_ascii=False)},
+        )
+        return out
 
     lower = last_user.lower()
     code_hints = any(

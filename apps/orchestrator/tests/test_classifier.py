@@ -14,6 +14,20 @@ def test_text_greeting_tiny():
     assert c["task_type"] == "greeting_or_tiny"
 
 
+def test_open_webui_follow_up_prompt_not_code_help_when_history_has_compare():
+    """Scraped web UI often contains 'compare' (nav); must not force code_help."""
+    blob = """### Task:
+Suggest 3-5 relevant follow-up questions or prompts that the user might naturally ask next in this conversation as a **user**, based on the chat history, to help continue or deepen the discussion.
+### Chat History:
+<chat_history>
+USER: news?
+ASSISTANT: See BenchmarksComparePlayground on example.com for CodingTop models.
+</chat_history>"""
+    c = classify_messages([{"role": "user", "content": blob}])
+    assert c["task_type"] == "simple_chat"
+    assert c["complexity_score"] == 0
+
+
 def test_image_triggers_vision_task():
     m = [
         {

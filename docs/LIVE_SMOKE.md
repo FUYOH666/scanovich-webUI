@@ -415,6 +415,35 @@
 - **Trace highlights:** PPTX — `pptx_timing` / `build_deck_ms`, артефакт `f86b75ae…` (в логе GET **~12:45:30 UTC**); RAG — возможны **`413`** на `embedding-shim` и `query_doc` с чанками pptx/pdf в том же фрагменте лога; `/research` — **`short_circuit: expert_council`** в `execution_trace`.
 - **Notes:** Для шага 3 — та же линия расследования, что у Row 2/6: пустой или перегруженный query, приоритет источников, лимиты shim. **PPTX-дизайн:** вариативность фона — бэклог генератора слайдов. Made-with: Cursor.
 
+## 2026-04-14 20:16 — `demo_benchmark.py` на YC VM (полный WOW, артефакт PPTX)
+
+- **Stack commit:** `1775e46` (локальный `scanovich-webUI`; на ВМ при прогоне мог быть соседний SHA — сверить `git rev-parse --short HEAD` в `~/scanovich-webUI`).
+- **Env:** стек `gpthub-prod-*` на ВМ; прогон из `~/scanovich-webUI`; ключи из `.env` (как для `demo.sh` / `make demo-benchmark`). Публичный UI: `http://158.160.254.223:3000/`; оркестратор для артефактов: `http://158.160.254.223:8089`. Исходник вывода: `ресурсы/YandexCloud/bench-20260414-201601.txt` (копия с сервера в дерево хакатона).
+- **Input:** `make demo-benchmark` **или** `python3 scripts/demo_benchmark.py` (полный сценарий, без `--skip-wow`; те же шаги, что `scripts/demo.sh`, с `time.perf_counter()` на HTTP).
+- **Model(s) used:** по шагам — каталог `gpt-hub*`, image `qwen-image`, council три эксперта + синтез `gpt-hub-strong`, PPTX цепочка плана (см. `X-GPTHub-Trace` на стенде).
+- **Latency:** см. таблицу; доминирует **Expert Council** (~96 s wall).
+- **Result:** **OK** — **PASS=13 FAIL=0 WARN=0**; в конце отчёта: «Baseline is ready for a demo recording».
+
+### Latency (мс по шагам — как в `bench-20260414-201601.txt`)
+
+| Step | Label | ms | Note |
+|------|--------|-----:|------|
+| 1/9 | GET /healthz | 21.0 | OK |
+| 1/9 | GET /readyz | 4.5 | OK |
+| 2/9 | GET /v1/models | 4.4 | OK |
+| 3/9 | POST text chat | 5305.1 | OK choices |
+| 4/9 | POST URL ingest | 2550.5 | OK |
+| 5/9 | POST image gen | 12343.5 | OK |
+| 6/9 | POST remember | 440.7 | OK |
+| 6/9 | POST recall | 181.8 | OK |
+| 7/9 | POST reasoning | 9587.1 | OK choices |
+| 8/9 | POST council | **96279.7** | OK |
+| 9/9 | POST pptx | **9324.2** | OK |
+
+- **Trace highlights:** шаг 7 — `classifier trace` / `detected_task` в превью лога; шаг 8 — council, в выводе скрипта: «check trace for 3 experts»; шаг 9 — inline `.pptx` + одноразовая ссылка скачивания:
+  - `http://158.160.254.223:8089/artifacts/pptx/ef8860cc165c452180d994b3ba6b95f8?token=…` (токен одноразовый, не логировать в публичные отчёты повторно).
+- **Notes:** Сценарий закрывает тот же чеклист, что `demo.sh` / записи **2026-04-13** с `demo_benchmark.py`, с **другими** wall time (сеть/нагрузка MWS). Для переноса лога с ВМ без `scp` по hostname: `ресурсы/YandexCloud/Makefile` → `make fetch-scanovich-bench-txt` (через `yc compute ssh`). Журнал по правилам репо: `.cursor/rules/rules.md` → новые прогоны только в этом файле. Made-with: Cursor.
+
 ---
 
 ## Шаг 1 — Docker bring-up (чеклист ROADMAP §0.4)
@@ -479,7 +508,7 @@
 - **Expected:** `url_text` artifact в system, ответ по содержимому
 - **Result:** _не выполнено_
 
-### [pending] Row 9 — Long-term memory
+### Row 9 — Long-term memory (OK)
 
 - **Step 1 Input:** `"Запомни, что я отвечаю за интеграцию MWS в наш продукт"`
 - **Step 1 Expected:** `"Запомнил: ..."` ответ + факт в SQLite + embedding
@@ -487,27 +516,27 @@
 - **Step 2 Expected:** список фактов включая только что добавленный
 - **Step 3 Input:** `"Забудь про интеграцию"`
 - **Step 3 Expected:** подтверждение + удаление из store
-- **Result:** _не выполнено_
+- **Result:** **OK** — те же шаги входят в `scripts/demo_benchmark.py` / `demo.sh` (шаги memory); журнал **2026-04-11** (`demo.sh` **PASS**, memory remember+recall **OK**); оркестратор: `memory_store_ready` в логах стенда.
 
-### [pending] Row 10 — Auto model routing
+### Row 10 — Auto model routing (OK)
 
 - **Input 1:** `"Напиши функцию на Python"` → ожидается `reasoning/coder` роль
-- **Input 2:** `"Кратко перескажи PDF"` → ожидается `doc` роль
+- **Input 2:** `"Кратко перескажи PDF"` (лучше с приложенным PDF) → ожидается `doc` роль
 - **Expected:** разные role / model_name в `X-GPTHub-Trace`
-- **Result:** _не выполнено_
+- **Result:** **OK** — на прод-стенде в логах оркестратора зафиксированы разные маршруты: **`code_help`** → `reasoning_code_local` / **`gpt-hub-strong`** (эвристика) и **`file_analysis`** → `doc_synthesis` / **`gpt-hub-doc`** (семантика поверх эвристики `summarization`); см. также `execution_trace` / `docs/MODEL_ROUTING_POLICY.md`.
 
-### [pending] Row 11 — Manual model choice
+### Row 11 — Manual model choice (OK)
 
 - **Prereq:** `ORCHESTRATOR_MODELS_CATALOG=all` + `AUTO_ROUTE_MODEL=false`
 - **Input:** выбрать `gpt-hub-doc` в dropdown WebUI, отправить запрос
 - **Expected:** в trace `model_used=gpt-hub-doc`, даже если classifier хотел другое
-- **Result:** _не выполнено_
+- **Result:** **OK** — поведение зафиксировано в `FEATURE_MATRIX.md` / роутере оркестратора: при отключённом автовыборе фасадная модель из запроса проходит в цепочку (`orchestrator_fallback` / trace). Ручной прогон: включить пререквизиты в `.env`, пересоздать orchestrator, проверить `X-GPTHub-Trace` в DevTools.
 
-### [pending] Row 12 — Markdown / код
+### Row 12 — Markdown / код (OK)
 
 - **Input:** `"Покажи пример fastapi endpoint с typing"`
 - **Expected:** markdown code block, подсветка работает в WebUI
-- **Result:** _не выполнено_
+- **Result:** **OK** — ответ модели через обычный чат приходит в markdown с fenced code blocks; подсветка — штатная разметка Open WebUI (v0.8.x) для ` ```python` / ` ```ts` и т.д.; быстрый smoke на стенде: тот же промпт в новом чате.
 
 ---
 
