@@ -59,6 +59,7 @@ from gpthub_orchestrator.pptx import (
     pptx_download_filename,
     request_slide_plan,
 )
+from gpthub_orchestrator.pptx.audience_templates import resolve_pptx_template_filename
 from gpthub_orchestrator.pptx.artifacts import get_pptx_artifact_store
 from gpthub_orchestrator.memory.service import (
     build_memory_chat_completion,
@@ -590,6 +591,10 @@ async def chat_completions(
                             "phase": "build_deck_ms",
                             "ms": round((time.perf_counter() - t_build) * 1000, 1),
                             "pptx_bytes": len(pptx_blob),
+                            "plan_audience": settings.pptx_plan_audience,
+                            "template_file": resolve_pptx_template_filename(
+                                settings.pptx_plan_audience
+                            ),
                         },
                         ensure_ascii=False,
                     ),
@@ -613,7 +618,14 @@ async def chat_completions(
                 router_suggestion=router_suggestion,
                 model_used=model_vis,
                 artifacts=ingest_artifacts,
-                pptx={"status": "ok", "slides": len(plan.slides)},
+                pptx={
+                    "status": "ok",
+                    "slides": len(plan.slides),
+                    "plan_audience": settings.pptx_plan_audience,
+                    "template_file": resolve_pptx_template_filename(
+                        settings.pptx_plan_audience
+                    ),
+                },
                 prompt_version=prompt_version,
                 classifier_source=classifier_source,
                 server_clock_iso=server_clock_iso,

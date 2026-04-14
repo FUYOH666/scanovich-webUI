@@ -81,7 +81,12 @@ async def test_pptx_short_circuit_non_stream_ok():
             trace_hdr = r.headers.get("X-GPTHub-Trace")
             assert trace_hdr
             trace = json.loads(base64.b64decode(trace_hdr).decode("utf-8"))
-            assert trace.get("pptx") == {"status": "ok", "slides": 2}
+            assert trace.get("pptx") == {
+                "status": "ok",
+                "slides": 2,
+                "plan_audience": "auto",
+                "template_file": "dark.pptx",
+            }
             assert "orchestrator_fallback" not in trace
     finally:
         await mock_inner.aclose()

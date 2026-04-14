@@ -223,7 +223,11 @@ class Settings(BaseSettings):
     )
     pptx_plan_audience: str = Field(
         default="auto",
-        description="Audience hint for slide-plan LLM (auto|general|business|investor|teacher|student).",
+        description=(
+            "Audience hint for slide-plan LLM and bundled template pick "
+            "(auto|general|business|investor|education|creative). "
+            "Maps to filenames in assets/pttx; unknown values → auto."
+        ),
     )
     pptx_plan_scenario: str = Field(
         default="auto",
@@ -248,7 +252,10 @@ class Settings(BaseSettings):
         default=0,
         ge=0,
         le=64,
-        description="Pick template from sorted *.pptx in directory (index wraps modulo file count).",
+        description=(
+            "Fallback when pptx_plan_audience-mapped .pptx is missing from the templates directory: "
+            "pick sorted *.pptx by index (wraps modulo count)."
+        ),
     )
     pptx_artifacts_public_base_url: str = Field(
         default="",
@@ -371,6 +378,14 @@ class Settings(BaseSettings):
             "(matches the orchestrator host port mapping in docker-compose)."
         ),
     )
+
+    @field_validator("pptx_plan_audience", mode="before")
+    @classmethod
+    def normalize_pptx_plan_audience_field(cls, v: object) -> str:
+        # Local import: avoid cycle (pptx.__init__ → build → settings).
+        from gpthub_orchestrator.pptx.audience_templates import normalize_pptx_plan_audience
+
+        return normalize_pptx_plan_audience(v)
 
     @field_validator("model_roles_path", "role_prompts_path", mode="before")
     @classmethod

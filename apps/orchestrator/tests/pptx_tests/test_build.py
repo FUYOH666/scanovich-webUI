@@ -9,7 +9,7 @@ import pytest
 from pptx import Presentation  # type: ignore[import-untyped]
 
 from gpthub_orchestrator.pptx import PptxGenError, build_pptx_from_plan
-from gpthub_orchestrator.pptx.build import deck_title_for_intro
+from gpthub_orchestrator.pptx.build import _pick_template_path, deck_title_for_intro
 from gpthub_orchestrator.pptx.schema import SlidePlan, SlideSpec
 from gpthub_orchestrator.settings import Settings
 
@@ -68,7 +68,42 @@ def test_build_pptx_with_bundled_slidesgo_template() -> None:
         pptx_asset_templates_enabled=True,
         pptx_templates_dir=str(tdir),
         pptx_template_index=0,
+        pptx_plan_audience="general",
     )
     blob = build_pptx_from_plan(plan, settings=s)
     assert blob.startswith(b"PK")
     assert len(blob) > 500_000
+
+
+def test_pick_template_path_by_audience() -> None:
+    root = Path(__file__).resolve().parents[2]
+    tdir = root / "assets" / "pttx"
+    if not tdir.is_dir() or not (tdir / "dark.pptx").is_file():
+        pytest.skip("dark.pptx not in assets/pttx")
+    s = Settings(
+        litellm_base_url="http://litellm.test",
+        orchestrator_api_key="k",
+        pptx_asset_templates_enabled=True,
+        pptx_templates_dir=str(tdir),
+        pptx_plan_audience="general",
+        pptx_template_index=63,
+    )
+    picked = _pick_template_path(s)
+    assert picked is not None
+    assert picked.name == "dark.pptx"
+
+
+def test_pick_template_path_fallback_index_when_file_missing(tmp_path: Path) -> None:
+    only = tmp_path / "only.pptx"
+    only.write_bytes(b"not a real pptx")
+    s = Settings(
+        litellm_base_url="http://litellm.test",
+        orchestrator_api_key="k",
+        pptx_asset_templates_enabled=True,
+        pptx_templates_dir=str(tmp_path),
+        pptx_plan_audience="general",
+        pptx_template_index=0,
+    )
+    picked = _pick_template_path(s)
+    assert picked is not None
+    assert picked.name == "only.pptx"

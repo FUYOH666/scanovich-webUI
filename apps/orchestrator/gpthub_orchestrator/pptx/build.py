@@ -6,6 +6,7 @@ import io
 import logging
 from pathlib import Path
 
+from gpthub_orchestrator.pptx.audience_templates import resolve_pptx_template_filename
 from gpthub_orchestrator.pptx.schema import (
     MAX_BULLETS_PER_SLIDE,
     MAX_SLIDES,
@@ -97,6 +98,10 @@ def _pick_template_path(settings: Settings) -> Path | None:
     files = sorted(d.glob("*.pptx"))
     if not files:
         return None
+    want_name = resolve_pptx_template_filename(settings.pptx_plan_audience)
+    for p in files:
+        if p.name == want_name:
+            return p
     idx = settings.pptx_template_index % len(files)
     return files[idx]
 

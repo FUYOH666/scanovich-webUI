@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import time
 from io import BytesIO
 from pathlib import Path
@@ -69,7 +70,7 @@ def _bench_settings(*, templates_dir: Path, template_index: int) -> Settings:
 
 @pytest.mark.bench
 @pytest.mark.asyncio
-async def test_bench_nature_deck_all_pttx_templates() -> None:
+async def test_bench_nature_deck_all_pttx_templates(tmp_path_factory: pytest.TempPathFactory) -> None:
     """Generate a nature deck once per ``*.pptx`` in ``assets/pttx``; assert valid bytes + slide count."""
     _bench_skip_if_disabled()
     if not _TEMPLATES_DIR.is_dir():
@@ -86,7 +87,10 @@ async def test_bench_nature_deck_all_pttx_templates() -> None:
 
     async with httpx.AsyncClient(timeout=timeout) as http:
         for idx, tpath in enumerate(template_files):
-            settings = _bench_settings(templates_dir=_TEMPLATES_DIR, template_index=idx)
+            # One template per dir so audience-based default (dark.pptx) does not force the same theme every time.
+            one_dir = tmp_path_factory.mktemp(f"bench_pttx_{idx}")
+            shutil.copy(tpath, one_dir / tpath.name)
+            settings = _bench_settings(templates_dir=one_dir, template_index=0)
             t0 = time.perf_counter()
             plan = await request_slide_plan(http, settings, messages)
             t_plan = time.perf_counter()
