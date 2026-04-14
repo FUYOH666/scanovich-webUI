@@ -399,6 +399,22 @@
 - **Trace highlights:** для успешных PPTX/PDF — **`ingest_peek`** с ненулевым **`open_webui_disk`**, **`ingest_complete`** с **`document_text`** в system; для **B** — то же для PDF на втором тёрне, но **видимый ответ пользователю** не отражает PDF (см. классификатор и `gpt-hub-turbo` выше).
 - **Notes:** **FEATURE_MATRIX** ряд 6: одиночные вложения закрывают сценарий. Отдельно (другая гипотеза): ingest с диска идёт **только с последнего user-сообщения** — сырой PPTX с **предыдущего** тёрна второй раз не очередится; если понадобится «оба файла в одном ответе» без повторной загрузки — нужна доработка (обход ранних `message.files` или явный UX). **Много файлов в одном сообщении** — тоже отдельная проверка очереди по всем `files`. Made-with: Cursor.
 
+## 2026-04-14 — Один чат: PPTX → PDF → голос → презентация «операторы» → `/research` карьера МТС (YC VM)
+
+- **Stack commit:** _как на ВМ в момент прогона_ (см. деплой `scanovich-webUI`; оркестратор с RAG-профилем и общим томом WebUI).
+- **Env:** `infra/docker-compose.yml` с `--profile rag`; `.env` + `.env.mws.local` на ВМ; агрегат логов: `ресурсы/YandexCloud/logs.txt` (`make logs-scanovich-compose`).
+- **Input (последовательность в одном чате, модель `gpt-hub`):**
+  1. **PPTX** — загрузка презентации, ответ по содержимому: **OK** (контент ушёл в модель).
+  2. **PDF** (LLM-survey): **OK**, документ обработан.
+  3. **Диктофон** — расшифровка: **OK** (WebUI STT / цепочка до MWS по стеку); **ответ: PARTIAL** — в промпт попали **нерелевантные RAG-источники** (чunks с pptx/pdf из чата), ожидаемый опорный web-запрос фактически не отработал с точки зрения пользователя.
+  4. **Презентация** «мобильные операторы в России» (с контекстом URL в инжесте): **OK** по содержанию; **`plan_total_ms` ~47.9 с** (~47872 ms в логе); **продуктовое пожелание:** смена фона между слайдами (шаблон).
+  5. **`/research` возможности роста для работников МТС** — **expert council** (`deep_research`): ветки **`branches_ok`** — Generalist (**gpt-hub-turbo**) **4224 ms**, Reasoning (**gpt-hub-reasoning-or**) **10345 ms**, Doc (**gpt-hub-doc**) **3386 ms**; **`orchestrator_fallback.total_ms` ~121809** (~**2 мин 02 с** wall); синтез **`gpt-hub-strong`**. Старт трассы по `server_clock_iso` **~12:47:53 UTC**, финальный `POST` синтеза **~12:49:55 UTC** (см. `execution_trace` в логе).
+- **Model(s) used:** `gpt-hub-doc` / `gpt-hub-turbo` / `gpt-hub-strong` / `gpt-hub-reasoning-or` по этапам; council — см. выше.
+- **Latency:** презентация — см. `pptx_timing.plan_total_ms` / `build_deck_ms`; council — см. выше; точные метки в **`ресурсы/YandexCloud/logs.txt`** (оркестратор **12:44–12:50 UTC** напр.).
+- **Result:** **PARTIAL** (шаги 1–2–4 **OK**; шаг 3 **PARTIAL**; шаг 5 **OK** по завершению council, качество опоры на МТС-специфику — на усмотрение оператора).
+- **Trace highlights:** PPTX — `pptx_timing` / `build_deck_ms`, артефакт `f86b75ae…` (в логе GET **~12:45:30 UTC**); RAG — возможны **`413`** на `embedding-shim` и `query_doc` с чанками pptx/pdf в том же фрагменте лога; `/research` — **`short_circuit: expert_council`** в `execution_trace`.
+- **Notes:** Операторский черновик перенесён из `Кек.md`. Для шага 3 — та же линия расследования, что у Row 2/6: пустой или перегруженный query, приоритет источников, лимиты shim. **PPTX-дизайн:** вариативность фона — бэклог генератора слайдов. Made-with: Cursor.
+
 ---
 
 ## Шаг 1 — Docker bring-up (чеклист ROADMAP §0.4)
