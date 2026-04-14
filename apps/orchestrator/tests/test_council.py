@@ -19,6 +19,7 @@ from gpthub_orchestrator.council import (
     default_experts,
     extract_council_question,
     is_council_request,
+    is_open_webui_internal_completion_user_text,
     run_council,
 )
 from gpthub_orchestrator.settings import Settings
@@ -139,6 +140,33 @@ def test_council_intent_positive(text: str) -> None:
 )
 def test_council_intent_negative(text: str) -> None:
     assert not is_council_request(text)
+
+
+def test_open_webui_internal_prompt_detected_generate_queries() -> None:
+    blob = (
+        "### Task:\n"
+        "Analyze the chat history to determine the necessity of generating search queries, "
+        "in the given language.\n\n"
+        "### Chat History:\n<chat_history>\n"
+        "USER: /research возможности роста для работников компании МТС\n"
+        "</chat_history>\n"
+    )
+    assert is_open_webui_internal_completion_user_text(blob)
+    assert is_council_request(blob)
+
+
+def test_open_webui_internal_prompt_detected_follow_ups() -> None:
+    blob = (
+        "### Task:\n"
+        "Suggest 3-5 relevant follow-up questions or prompts that the user might naturally ask next\n"
+        "### Chat History:\n<chat_history>\nUSER: /research topic\n</chat_history>\n"
+    )
+    assert is_open_webui_internal_completion_user_text(blob)
+    assert is_council_request(blob)
+
+
+def test_open_webui_internal_prompt_negative_plain_research() -> None:
+    assert not is_open_webui_internal_completion_user_text("/research карьера в МТС")
 
 
 def test_extract_council_question_strips_slash() -> None:

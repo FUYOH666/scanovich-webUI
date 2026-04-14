@@ -106,6 +106,31 @@ _RESEARCH_PHRASES = [
     ),
 ]
 
+# Open WebUI sends these as the last ``user`` message to the configured OpenAI base URL
+# (same as user chat). They embed ``<chat_history>`` which may contain ``/research`` or
+# research phrases and would false-trigger Expert Council if matched naïvely.
+# v0.8.12: ``generate_queries`` (middleware) and follow-up suggestion task.
+_RE_WEBUI_GENERATE_QUERIES_TASK = re.compile(
+    r"### Task:\s*\r?\n\s*Analyze the chat history to determine the necessity of generating search queries",
+    re.IGNORECASE,
+)
+_RE_WEBUI_FOLLOW_UP_SUGGESTIONS = re.compile(
+    r"Suggest 3[\-–]5 relevant follow-up questions",
+    re.IGNORECASE,
+)
+
+
+def is_open_webui_internal_completion_user_text(text: str) -> bool:
+    """True if ``text`` is a known Open WebUI synthetic user prompt (not real user intent)."""
+    if not text or not text.strip():
+        return False
+    s = text.strip()
+    if _RE_WEBUI_GENERATE_QUERIES_TASK.search(s):
+        return True
+    if _RE_WEBUI_FOLLOW_UP_SUGGESTIONS.search(s):
+        return True
+    return False
+
 
 def is_council_request(text: str) -> bool:
     """True if the last user text should short-circuit into the Expert Council."""

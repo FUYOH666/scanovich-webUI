@@ -1,7 +1,7 @@
 # GPTHub Prod — runs scripts/demo.sh. Loads ORCHESTRATOR_API_KEY from .env
 # (ORCHESTRATOR_API_KEY or LITELLM_MASTER_KEY) when not already in the environment.
 
-.PHONY: help demo demo-baseline docker-rebuild docker-rebuild-rag docker-reset docker-logs-save docker-logs-filter-health
+.PHONY: help demo demo-baseline docker-rebuild docker-rebuild-rag docker-reset docker-logs-save docker-logs-filter-health pptx-bench-nature
 
 ORCHESTRATOR_URL ?= http://localhost:8089
 COMPOSE_FILE ?= infra/docker-compose.yml
@@ -22,6 +22,7 @@ help:
 	@echo "  make docker-logs-save    - записать логи в logs/compose-YYYYMMDD-HHMMSS.log"
 	@echo "    (для rag: COMPOSE_PROFILES=rag make docker-logs-save)"
 	@echo "  make docker-logs-filter-health - последний logs/compose-*.log → logs/filtered.log (без health/readyz)"
+	@echo "  make pptx-bench-nature      - live PPTX bench (природа, все шаблоны assets/pttx) → tmp/*.pptx; нужен .env"
 	@echo "Env: ORCHESTRATOR_URL (default $(ORCHESTRATOR_URL)); ORCHESTRATOR_API_KEY overrides .env"
 
 docker-rebuild:
@@ -62,3 +63,15 @@ demo:
 docker-reset:
 	docker compose -f "$(CURDIR)/$(COMPOSE_FILE)" --profile rag down
 	docker compose -f "$(CURDIR)/$(COMPOSE_FILE)" --profile rag up -d
+
+# Live LLM + LiteLLM: loads repo-root .env (same keys as compose / demo).
+# Writes decks under $(CURDIR)/tmp/ (gitignored).
+pptx-bench-nature:
+	@[ -f "$(CURDIR)/.env" ] || { echo "FATAL: missing $(CURDIR)/.env (need ORCHESTRATOR_API_KEY, LITELLM_BASE_URL, …)" >&2; exit 2; }
+	@cd "$(CURDIR)/apps/orchestrator" && \
+	set -a && . "$(CURDIR)/.env" && set +a && \
+	echo "KEY len: $${#ORCHESTRATOR_API_KEY}" && \
+	PPTX_BENCH=1 \
+	LITELLM_BASE_URL="$${LITELLM_BASE_URL:-http://127.0.0.1:4000}" \
+	ORCHESTRATOR_API_KEY="$${ORCHESTRATOR_API_KEY}" \
+	uv run pytest tests/pptx_tests/test_bench_nature_templates.py -s -rs

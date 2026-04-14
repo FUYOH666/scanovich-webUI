@@ -24,6 +24,7 @@ from gpthub_orchestrator.council import (
     build_council_sse_chunks,
     extract_council_question,
     is_council_request,
+    is_open_webui_internal_completion_user_text,
     run_council,
 )
 from gpthub_orchestrator.greeting_canned import (
@@ -412,7 +413,11 @@ async def chat_completions(
                     parts = [str(p.get("text", "")) for p in c if isinstance(p, dict) and p.get("type") == "text"]
                     council_user_text = " ".join(parts).strip()
                 break
-        if council_user_text and is_council_request(council_user_text):
+        if (
+            council_user_text
+            and not is_open_webui_internal_completion_user_text(council_user_text)
+            and is_council_request(council_user_text)
+        ):
             question = extract_council_question(council_user_text)
             model_vis = client_visible_model_id(body, settings.orchestrator_public_model_id)
             try:
