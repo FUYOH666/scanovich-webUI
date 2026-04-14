@@ -45,6 +45,10 @@ services:
         required: false
     environment:
       LITELLM_BASE_URL: http://litellm:4000
+      # Same named volume as open-webui → read uploads from message.files[].file.path
+      ORCHESTRATOR_OPEN_WEBUI_DATA_MOUNT: /mnt/open-webui-backend-data
+    volumes:
+      - open-webui-data:/mnt/open-webui-backend-data:ro
     ports:
       - "8089:8000"
     depends_on:

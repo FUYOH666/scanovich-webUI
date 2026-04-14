@@ -163,6 +163,18 @@ class Settings(BaseSettings):
         default=False,
         description="Dev/test only: allow fetching private/loopback IPs. Must stay false in prod.",
     )
+    orchestrator_open_webui_data_mount: str | None = Field(
+        default=None,
+        description=(
+            "Directory in the orchestrator container where Open WebUI's /app/backend/data volume is mounted "
+            "(e.g. /mnt/open-webui-backend-data). Enables ingest from message.files[].file.path without base64 in content."
+        ),
+    )
+    orchestrator_open_webui_path_prefix: str = Field(
+        default="/app/backend/data",
+        min_length=1,
+        description="Path prefix in Open WebUI's file.path; replaced by orchestrator_open_webui_data_mount when reading.",
+    )
     image_gen_enabled: bool = Field(
         default=True,
         description="If true, orchestrator detects image-generation intent and calls MWS /images/generations directly.",

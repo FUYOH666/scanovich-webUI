@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 
 from gpthub_orchestrator.ingest.asr_client import AsrError, transcribe_audio_bytes
+from gpthub_orchestrator.ingest.open_webui_uploads import extract_open_webui_upload_work_items
 from gpthub_orchestrator.ingest.parts import (
     FileWorkItem,
     extract_file_work_items,
@@ -42,6 +43,13 @@ def _file_items_summary(indexed_items: list[tuple[int, Any]]) -> str:
             {"part_idx": i, "filename": w.filename, "mime": w.mime, "raw_bytes": len(w.raw)}
             for i, w in indexed_items
         ],
+        ensure_ascii=False,
+    )
+
+
+def _owui_disk_summary(items: list[FileWorkItem]) -> str:
+    return json.dumps(
+        [{"filename": w.filename, "mime": w.mime, "raw_bytes": len(w.raw)} for w in items],
         ensure_ascii=False,
     )
 
@@ -276,32 +284,50 @@ async def run_ingest_pipeline(
     """
     if not settings.ingest_enabled:
         pidx, pit = extract_file_work_items(messages)
+        owui_off = (
+            extract_open_webui_upload_work_items(messages[pidx], settings)
+            if pidx is not None
+            else []
+        )
         logger.info(
-            "ingest_disabled ingest_enabled=false peek_user_idx=%s peek_items=%s",
+            "ingest_disabled ingest_enabled=false peek_user_idx=%s peek_items=%s open_webui_disk=%s",
             pidx,
             _file_items_summary(pit) if pit else "[]",
+            _owui_disk_summary(owui_off) if owui_off else "[]",
         )
         return messages, [], None
 
     peek_idx, peek_items = extract_file_work_items(messages)
     peek_urls = _peek_urls(messages, settings)
+    owui_peek: list[FileWorkItem] = (
+        extract_open_webui_upload_work_items(messages[peek_idx], settings)
+        if peek_idx is not None
+        else []
+    )
     logger.info(
-        "ingest_peek last_user_msg_idx=%s file_parts=%s urls=%s",
+        "ingest_peek last_user_msg_idx=%s file_parts=%s open_webui_disk=%s urls=%s",
         peek_idx,
         _file_items_summary(peek_items) if peek_items else "[]",
+        _owui_disk_summary(owui_peek) if owui_peek else "[]",
         json.dumps(peek_urls, ensure_ascii=False),
     )
-    if (peek_idx is None or not peek_items) and not peek_urls:
-        logger.info("ingest_noop no_file_parts_no_urls")
+    if (peek_idx is None or not peek_items) and not peek_urls and not owui_peek:
+        logger.info("ingest_noop no_file_parts_no_urls_no_open_webui_disk")
         return messages, [], None
 
     t0 = time.perf_counter()
     msgs = copy.deepcopy(messages)
     user_idx, indexed_items = extract_file_work_items(msgs)
+    owui_items: list[FileWorkItem] = (
+        extract_open_webui_upload_work_items(msgs[user_idx], settings)
+        if user_idx is not None
+        else []
+    )
     logger.info(
-        "ingest_extract deepcopy_user_idx=%s indexed_parts=%s",
+        "ingest_extract deepcopy_user_idx=%s indexed_parts=%s open_webui_disk=%s",
         user_idx,
         _file_items_summary(indexed_items) if indexed_items else "[]",
+        _owui_disk_summary(owui_items) if owui_items else "[]",
     )
 
     drop_indices: set[int] = set()
@@ -327,15 +353,37 @@ async def run_ingest_pipeline(
                 meta.append(("text", part_idx))
                 drop_indices.add(part_idx)
 
+        for ow_i, item in enumerate(owui_items):
+            key = f"owui:{ow_i}"
+            if item.mime == "application/pdf" or item.filename.lower().endswith(".pdf"):
+                tasks.append(_process_one_pdf(item, settings))
+                meta.append(("pdf", key))
+            elif _is_audio_item(item.mime, item.filename):
+                tasks.append(_process_one_audio(item, settings, http))
+                meta.append(("audio", key))
+            elif is_richdoc_item(item.mime, item.filename):
+                tasks.append(_process_one_richdoc(item))
+                meta.append(("richdoc", key))
+            elif _is_plain_text_item(item.mime, item.filename):
+                tasks.append(_process_one_plain_text(item))
+                meta.append(("text", key))
+            else:
+                logger.warning(
+                    "ingest_open_webui_disk_unhandled filename=%s mime=%s",
+                    item.filename,
+                    item.mime,
+                )
+
     for url in peek_urls:
         tasks.append(_process_one_url(url, settings, http))
         meta.append(("url", url))
 
     if not tasks:
         logger.info(
-            "ingest_no_tasks_after_queue user_idx=%s indexed_n=%s url_n=%s",
+            "ingest_no_tasks_after_queue user_idx=%s indexed_n=%s owui_n=%s url_n=%s",
             user_idx,
             len(indexed_items),
+            len(owui_items),
             len(peek_urls),
         )
         return messages, [], None
@@ -357,6 +405,8 @@ async def run_ingest_pipeline(
 
     if user_idx is not None and drop_indices:
         strip_content_indices(msgs, user_idx, drop_indices)
+    if user_idx is not None and owui_items:
+        msgs[user_idx].pop("files", None)
     sys_msg = _build_artifact_system_message(artifacts)
     msgs.insert(0, sys_msg)
 
