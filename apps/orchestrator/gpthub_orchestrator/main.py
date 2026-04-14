@@ -365,7 +365,7 @@ async def chat_completions(
                     if bool(body.get("stream")):
                         chunks = build_memory_sse_chunks(model_vis, mem_result.reply_text)
 
-                        async def memory_sse():
+                        def memory_sse():
                             for ch in chunks:
                                 yield ch
 
@@ -406,7 +406,7 @@ async def chat_completions(
         trace_hdr = trace_to_header_value(trace)
         if bool(body.get("stream")):
 
-            async def help_sse():
+            def help_sse():
                 for chunk in canned_chat_completion_sse_chunks(model=model_vis, content=help_text):
                     yield chunk
 
@@ -469,7 +469,7 @@ async def chat_completions(
                 trace_hdr = trace_to_header_value(trace)
                 chunks = build_council_sse_chunks(model_vis, council_result.final_text)
 
-                async def council_sse():
+                def council_sse():
                     for ch in chunks:
                         yield ch
 
@@ -550,7 +550,7 @@ async def chat_completions(
                 if bool(body.get("stream")):
                     chunks = build_image_sse_chunks(model_vis, img_prompt, image_ref)
 
-                    async def image_sse():
+                    def image_sse():
                         for ch in chunks:
                             yield ch
 
@@ -593,7 +593,7 @@ async def chat_completions(
             trace_hdr = trace_to_header_value(trace)
             if bool(body.get("stream")):
 
-                async def pptx_err_sse():
+                def pptx_err_sse():
                     for ch in build_pptx_error_sse_chunks(model_label=model_vis, message=pptx_user_err):
                         yield ch
 
@@ -695,7 +695,7 @@ async def chat_completions(
             intro_title = deck_title_for_intro(plan) if settings.pptx_intro_slide_enabled else None
             if bool(body.get("stream")):
 
-                async def pptx_ok_sse():
+                def pptx_ok_sse():
                     for ch in build_pptx_sse_chunks(
                         model_label=model_vis,
                         plan=plan,
@@ -740,7 +740,7 @@ async def chat_completions(
         stream = bool(body.get("stream"))
         if stream:
 
-            async def canned_sse():
+            def canned_sse():
                 for chunk in canned_chat_completion_sse_chunks(model=model_vis, content=canned_text):
                     yield chunk
 

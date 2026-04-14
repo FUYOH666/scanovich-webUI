@@ -163,7 +163,11 @@ async def wrap_sync_sse_with_webui_complete(
     *,
     done_msg: str = "Готово.",
 ) -> AsyncIterator[bytes]:
-    """Async wrapper for sync byte iterators (short-circuit SSE helpers)."""
+    """Async wrapper for *sync* byte iterators (short-circuit SSE helpers).
+
+    Do not pass an async generator here: use ``async def`` + ``yield`` only with
+    :func:`wrap_async_sse_with_webui_complete`.
+    """
     try:
         for chunk in gen:
             yield chunk
