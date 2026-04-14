@@ -59,6 +59,7 @@ from gpthub_orchestrator.pptx import (
     pptx_download_filename,
     request_slide_plan,
 )
+from gpthub_orchestrator.pptx.audience_infer import resolve_effective_pptx_plan_audience
 from gpthub_orchestrator.pptx.audience_templates import resolve_pptx_template_filename
 from gpthub_orchestrator.pptx.artifacts import get_pptx_artifact_store
 from gpthub_orchestrator.memory.service import (
@@ -567,21 +568,29 @@ async def chat_completions(
             return JSONResponse(content=out, headers={"X-GPTHub-Trace": trace_hdr})
 
         try:
+            pptx_run_settings = settings.model_copy(
+                update={
+                    "pptx_plan_audience": resolve_effective_pptx_plan_audience(
+                        body["messages"],
+                        default_audience=settings.pptx_plan_audience,
+                    ),
+                },
+            )
             async with asyncio.timeout(settings.pptx_plan_timeout_seconds):
                 plan, base_prs = await asyncio.gather(
                     request_slide_plan(
                         http,
-                        settings,
+                        pptx_run_settings,
                         body["messages"],
                         authorization=auth_header,
                     ),
-                    asyncio.to_thread(load_stripped_base_presentation, settings),
+                    asyncio.to_thread(load_stripped_base_presentation, pptx_run_settings),
                 )
                 t_build = time.perf_counter()
                 pptx_blob = await asyncio.to_thread(
                     build_pptx_from_plan,
                     plan,
-                    settings=settings,
+                    settings=pptx_run_settings,
                     base_prs=base_prs,
                 )
                 logger.info(
@@ -591,9 +600,9 @@ async def chat_completions(
                             "phase": "build_deck_ms",
                             "ms": round((time.perf_counter() - t_build) * 1000, 1),
                             "pptx_bytes": len(pptx_blob),
-                            "plan_audience": settings.pptx_plan_audience,
+                            "plan_audience": pptx_run_settings.pptx_plan_audience,
                             "template_file": resolve_pptx_template_filename(
-                                settings.pptx_plan_audience
+                                pptx_run_settings.pptx_plan_audience
                             ),
                         },
                         ensure_ascii=False,
@@ -621,9 +630,9 @@ async def chat_completions(
                 pptx={
                     "status": "ok",
                     "slides": len(plan.slides),
-                    "plan_audience": settings.pptx_plan_audience,
+                    "plan_audience": pptx_run_settings.pptx_plan_audience,
                     "template_file": resolve_pptx_template_filename(
-                        settings.pptx_plan_audience
+                        pptx_run_settings.pptx_plan_audience
                     ),
                 },
                 prompt_version=prompt_version,
