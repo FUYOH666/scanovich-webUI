@@ -1,10 +1,18 @@
-# GPTHub Prod — runs scripts/demo.sh. Loads ORCHESTRATOR_API_KEY from .env
-# (ORCHESTRATOR_API_KEY or LITELLM_MASTER_KEY) when not already in the environment.
+# GPTHub Prod — runs scripts/demo.sh. Ключ: при наличии .env читаем из файла первым делом
+# (иначе устаревший export ORCHESTRATOR_API_KEY в shell ломал make demo при рабочем .env).
 
 .PHONY: help bootstrap-env demo demo-baseline demo-benchmark docker-rebuild docker-rebuild-rag docker-reset docker-logs-save docker-logs-filter-health pptx-bench-nature open-webui-up open-webui-down open-webui-image-up open-webui-image-down
 
+SHELL := /bin/bash
+
 ORCHESTRATOR_URL ?= http://localhost:8089
 COMPOSE_FILE ?= infra/docker-compose.yml
+# Подстановка ${OPEN_WEBUI_IMAGE} и т.д.: явные --env-file из корня репо.
+# Не задавать --project-directory на корень: тогда path ../.env в yml резолвится в каталог выше репо.
+DOCKER_COMPOSE_INFRA := docker compose \
+	--env-file "$(CURDIR)/.env" \
+	--env-file "$(CURDIR)/.env.mws.local" \
+	-f "$(CURDIR)/$(COMPOSE_FILE)"
 OPEN_WEBUI_DIR ?= open-webui
 OPEN_WEBUI_COMPOSE ?= $(CURDIR)/$(OPEN_WEBUI_DIR)/docker-compose.yaml
 # Готовый образ форка (без локального build); см. open-webui-image-up
@@ -41,6 +49,7 @@ help:
 	@echo "  make open-webui-image-down - остановить контейнер OPEN_WEBUI_CONTAINER"
 	@echo "Env: ORCHESTRATOR_URL (default $(ORCHESTRATOR_URL)); ORCHESTRATOR_API_KEY overrides .env; OPEN_WEBUI_IMAGE (default $(OPEN_WEBUI_IMAGE))"
 	@echo "Bootstrap: BOOTSTRAP_FORCE=1 перезаписать существующие .env / .env.mws.local из примеров"
+	@echo "  (после bootstrap в .env всегда будет непустой OPEN_WEBUI_IMAGE для compose)"
 
 # Первый запуск: .env + .env.mws.local из шаблонов в этом репозитории (без внешних каталогов).
 # bootstrap.env.example — сокращённый прод-шаблон; полный комментарий — .env.example.
@@ -69,26 +78,35 @@ bootstrap-env:
 	    echo "Пустой $(CURDIR)/.env.mws.local (нет $$me) — задай MWS_GPT_API_BASE и MWS_GPT_API_KEY"; \
 	  fi; \
 	fi; \
+	envf="$(CURDIR)/.env"; \
+	img='$(OPEN_WEBUI_IMAGE)'; \
+	if grep -qE '^OPEN_WEBUI_IMAGE=.+' "$$envf" 2>/dev/null; then \
+	  echo "OK: OPEN_WEBUI_IMAGE уже задан в $$envf"; \
+	else \
+	  grep -vE '^[[:space:]]*OPEN_WEBUI_IMAGE=' "$$envf" > "$$envf.tmp" && mv "$$envf.tmp" "$$envf"; \
+	  printf '\n# docker compose: сервис open-webui (см. infra/docker-compose.yml)\nOPEN_WEBUI_IMAGE=%s\n' "$$img" >> "$$envf"; \
+	  echo "Добавлен OPEN_WEBUI_IMAGE=$$img в $$envf"; \
+	fi; \
 	echo ""; \
 	echo "=== Дальше ==="; \
 	echo "1) Отредактируй секреты в .env и .env.mws.local (замени replace-with-*, ключи MWS, TAVILY, GPTHUB_INTERNAL_EVENT_SECRET, …)."; \
 	echo "2) Полный список переменных и пояснения: .env.example"; \
-	echo "3) Поднять стек (два env-file + profile rag):"; \
-	echo "   docker compose -f $(CURDIR)/$(COMPOSE_FILE) --env-file $(CURDIR)/.env --env-file $(CURDIR)/.env.mws.local --profile rag up -d --build"
+	echo "3) Поднять стек (нужны .env и .env.mws.local в корне репо):"; \
+	echo "   $(DOCKER_COMPOSE_INFRA) --profile rag up -d --build"
 
 docker-rebuild:
-	docker compose -f "$(CURDIR)/$(COMPOSE_FILE)" build orchestrator
-	docker compose -f "$(CURDIR)/$(COMPOSE_FILE)" up -d orchestrator
+	$(DOCKER_COMPOSE_INFRA) build orchestrator
+	$(DOCKER_COMPOSE_INFRA) up -d orchestrator
 
 docker-rebuild-rag:
-	docker compose -f "$(CURDIR)/$(COMPOSE_FILE)" --profile rag build orchestrator embedding-shim
-	docker compose -f "$(CURDIR)/$(COMPOSE_FILE)" --profile rag up -d orchestrator embedding-shim
+	$(DOCKER_COMPOSE_INFRA) --profile rag build orchestrator embedding-shim
+	$(DOCKER_COMPOSE_INFRA) --profile rag up -d orchestrator embedding-shim
 
 docker-logs-save:
 	@mkdir -p "$(CURDIR)/logs"
 	@ts=$$(date +%Y%m%d-%H%M%S); \
 	out="$(CURDIR)/logs/compose-$$ts.log"; \
-	docker compose -f "$(CURDIR)/$(COMPOSE_FILE)" logs --no-color --timestamps > "$$out"; \
+	$(DOCKER_COMPOSE_INFRA) logs --no-color --timestamps > "$$out"; \
 	echo "Wrote $$out"
 
 # Drop noisy probe lines from the newest saved compose log (see docker-logs-save).
@@ -103,27 +121,33 @@ docker-logs-filter-health:
 
 demo:
 	@ORCHESTRATOR_URL="$(ORCHESTRATOR_URL)" bash -euo pipefail -c '\
-	  key="$${ORCHESTRATOR_API_KEY:-}"; \
-	  if [[ -z "$$key" && -f "$(CURDIR)/.env" ]]; then \
+	  key=""; \
+	  if [[ -f "$(CURDIR)/.env" ]]; then \
 	    key="$$(python3 "$(CURDIR)/scripts/read_env_key.py" "$(CURDIR)/.env")"; \
 	  fi; \
+	  if [[ -z "$$key" ]]; then \
+	    key="$${ORCHESTRATOR_API_KEY:-}"; \
+	  fi; \
 	  export ORCHESTRATOR_API_KEY="$$key"; \
-	  [[ -n "$$ORCHESTRATOR_API_KEY" ]] || { echo "FATAL: ORCHESTRATOR_API_KEY empty — export it or set in .env (ORCHESTRATOR_API_KEY or LITELLM_MASTER_KEY)" >&2; exit 2; }; \
+	  [[ -n "$$ORCHESTRATOR_API_KEY" ]] || { echo "FATAL: ORCHESTRATOR_API_KEY empty — добавь в .env (ORCHESTRATOR_API_KEY или LITELLM_MASTER_KEY) или export в shell" >&2; exit 2; }; \
 	  exec "$(CURDIR)/scripts/demo.sh" $(DEMO_EXTRA)'
 
 demo-benchmark:
 	@ORCHESTRATOR_URL="$(ORCHESTRATOR_URL)" bash -euo pipefail -c '\
-	  key="$${ORCHESTRATOR_API_KEY:-}"; \
-	  if [[ -z "$$key" && -f "$(CURDIR)/.env" ]]; then \
+	  key=""; \
+	  if [[ -f "$(CURDIR)/.env" ]]; then \
 	    key="$$(python3 "$(CURDIR)/scripts/read_env_key.py" "$(CURDIR)/.env")"; \
 	  fi; \
+	  if [[ -z "$$key" ]]; then \
+	    key="$${ORCHESTRATOR_API_KEY:-}"; \
+	  fi; \
 	  export ORCHESTRATOR_API_KEY="$$key"; \
-	  [[ -n "$$ORCHESTRATOR_API_KEY" ]] || { echo "FATAL: ORCHESTRATOR_API_KEY empty — export it or set in .env (ORCHESTRATOR_API_KEY or LITELLM_MASTER_KEY)" >&2; exit 2; }; \
+	  [[ -n "$$ORCHESTRATOR_API_KEY" ]] || { echo "FATAL: ORCHESTRATOR_API_KEY empty — добавь в .env (ORCHESTRATOR_API_KEY или LITELLM_MASTER_KEY) или export в shell" >&2; exit 2; }; \
 	  exec python3 "$(CURDIR)/scripts/demo_benchmark.py"'
 
 docker-reset:
-	docker compose -f "$(CURDIR)/$(COMPOSE_FILE)" --profile rag down
-	docker compose -f "$(CURDIR)/$(COMPOSE_FILE)" --profile rag up -d
+	$(DOCKER_COMPOSE_INFRA) --profile rag down
+	$(DOCKER_COMPOSE_INFRA) --profile rag up -d
 
 # Vendored fork: https://github.com/open-webui/open-webui style stack (ollama + open-webui).
 # Compose file lives under OPEN_WEBUI_DIR; build context is that directory.

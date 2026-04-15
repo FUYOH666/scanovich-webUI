@@ -98,6 +98,7 @@ services:
       start_period: 10s
 
   open-webui:
+    # ${OPEN_WEBUI_IMAGE}: для подстановки передавайте корневой .env через make / docker compose --env-file (см. Makefile DOCKER_COMPOSE_INFRA)
     image: ${OPEN_WEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.8.12}
     container_name: gpthub-prod-open-webui
     restart: unless-stopped

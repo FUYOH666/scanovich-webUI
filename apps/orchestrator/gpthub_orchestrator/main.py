@@ -195,7 +195,11 @@ def verify_bearer(
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     token = authorization[7:].strip()
     if token != settings.orchestrator_api_key:
-        raise HTTPException(status_code=401, detail="Invalid API key")
+        # Не путать с ответом LiteLLM (master_key): там тот же текст «Invalid API key».
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid orchestrator API key (Bearer must match ORCHESTRATOR_API_KEY)",
+        )
 
 
 @app.get("/healthz")
