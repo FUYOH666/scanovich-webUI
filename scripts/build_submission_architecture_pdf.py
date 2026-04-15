@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Build docs/submission/GPTHub_architecture_submission.pdf for hackathon upload.
 
-Страницы 1–3: структурированный текст (кириллица с нормальным ToUnicode в PDF) +
-две схемы PNG (для людей и vision-моделей).
+Один **текстовый** PDF (без растровых PNG внутри): структурированное описание
+сценариев, моделей, зависимостей + **схемы** как полный исходник **Mermaid**
+(monospace, извлекается pypdf/pdfminer). Подходит и для человека, и для ИИ-жюри.
 
-Страницы 4+: приложение — полный текст Mermaid из architecture.mmd и user_flow.mmd
-моноширинным шрифтом, чтобы **текстовое извлечение** из PDF (pypdf/pdfminer) давало
-граф для ИИ-жюри без OCR по растру.
+Входы: ARCHITECTURE_SUBMISSION_RU.txt, architecture.mmd, user_flow.mmd.
+PNG из mmdc не требуются для этой сборки (остаются для слайдов / презентации).
 
 Run from repo root:
-  uv run --with reportlab --with pillow python scripts/build_submission_architecture_pdf.py
+  uv run --with reportlab python scripts/build_submission_architecture_pdf.py
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ import logging
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-from PIL import Image as PILImage
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4
@@ -28,7 +27,6 @@ from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
-    Image as RLImage,
     PageBreak,
     Paragraph,
     Preformatted,
@@ -59,7 +57,6 @@ def _pick_cyrillic_ttf() -> Path | None:
 
 
 def _register_fonts() -> tuple[str, str]:
-    """Return (body_font, bold_name) — bold may map to same if no separate file."""
     ttf = _pick_cyrillic_ttf()
     if ttf is not None:
         pdfmetrics.registerFont(TTFont("GPTHubBody", str(ttf)))
@@ -180,8 +177,8 @@ def _story_from_sections(
             "<b>MachineReadableMeta</b> "
             "document_type=GPTHub_architecture_submission; "
             "encoding=UTF-8; "
-            "human_pages=1-3_figures; "
-            "ai_appendix=mermaid_source_pages_follow",
+            "diagrams=mermaid_text_embedded; "
+            "raster_images=none",
             meta_style,
         )
     )
@@ -199,26 +196,12 @@ def _story_from_sections(
                 story.append(Paragraph("• " + _xmlescape(b), bullet_style))
         story.append(Spacer(1, 0.12 * cm))
 
-    story.append(PageBreak())
     return story
 
 
-def _scaled_image(path: Path, max_width: float) -> RLImage:
-    with PILImage.open(path) as im:
-        w_px, h_px = im.size
-    aspect = h_px / max(float(w_px), 1.0)
-    w = max_width
-    h = w * aspect
-    max_h = 24 * cm
-    if h > max_h:
-        h = max_h
-        w = h / aspect
-    return RLImage(str(path), width=w, height=h)
-
-
-def _mermaid_appendix_story(
+def _mermaid_diagram_story(
     mmd_path: Path,
-    appendix_title: str,
+    diagram_title: str,
     mono_style: ParagraphStyle,
     head_style: ParagraphStyle,
 ) -> list:
@@ -228,7 +211,7 @@ def _mermaid_appendix_story(
     for i in range(0, len(lines), MERMAID_CHUNK_LINES):
         chunks.append("\n".join(lines[i : i + MERMAID_CHUNK_LINES]))
     out: list = []
-    out.append(Paragraph(_xmlescape(appendix_title), head_style))
+    out.append(Paragraph(_xmlescape(diagram_title), head_style))
     out.append(Spacer(1, 0.2 * cm))
     for idx, chunk in enumerate(chunks):
         if idx:
@@ -251,24 +234,14 @@ def main() -> None:
     out = args.out.resolve()
 
     txt_path = sub / "ARCHITECTURE_SUBMISSION_RU.txt"
-    arch_png = sub / "architecture.png"
-    flow_png = sub / "user_flow.png"
     arch_mmd = sub / "architecture.mmd"
     flow_mmd = sub / "user_flow.mmd"
-    for p in (txt_path, arch_png, flow_png, arch_mmd, flow_mmd):
+    for p in (txt_path, arch_mmd, flow_mmd):
         if not p.is_file():
             raise SystemExit(f"missing required file: {p}")
 
-    body_font, _bold_unused = _register_fonts()
+    body_font, _ = _register_fonts()
     styles = getSampleStyleSheet()
-    caption_style = ParagraphStyle(
-        "Cap",
-        parent=styles["Normal"],
-        fontName=body_font,
-        fontSize=11,
-        leading=14,
-        spaceAfter=6,
-    )
     mono_style = ParagraphStyle(
         "Mono",
         parent=styles["Code"],
@@ -277,8 +250,8 @@ def main() -> None:
         leading=9,
         alignment=TA_LEFT,
     )
-    appendix_head_style = ParagraphStyle(
-        "AppHead",
+    diagram_head_style = ParagraphStyle(
+        "DiagHead",
         parent=styles["Normal"],
         fontName=body_font,
         fontSize=11,
@@ -289,31 +262,25 @@ def main() -> None:
     doc_title, sections = _parse_submission_txt(txt_path.read_text(encoding="utf-8"))
     story = _story_from_sections(doc_title, sections, body_font)
 
-    content_w = A4[0] - 3.6 * cm
-    story.append(Paragraph(_xmlescape("Контур сервисов и моделей (PNG)"), caption_style))
-    story.append(_scaled_image(arch_png, content_w))
     story.append(PageBreak())
-    story.append(Paragraph(_xmlescape("User Flow — один чат (PNG)"), caption_style))
-    story.append(_scaled_image(flow_png, content_w))
-    story.append(PageBreak())
-
     story.extend(
-        _mermaid_appendix_story(
+        _mermaid_diagram_story(
             arch_mmd,
-            "Приложение А — Исходник Mermaid: контур сервисов (architecture.mmd). "
-            "Текст ниже извлекается из PDF без OCR.",
+            "Схема 1. Контур сервисов и моделей, поддерживающих единый чат "
+            "(исходник Mermaid: architecture.mmd). Визуальный PNG при необходимости "
+            "собирается отдельно командой mmdc — в этом PDF только текст.",
             mono_style,
-            appendix_head_style,
+            diagram_head_style,
         )
     )
     story.append(PageBreak())
     story.extend(
-        _mermaid_appendix_story(
+        _mermaid_diagram_story(
             flow_mmd,
-            "Приложение Б — Исходник Mermaid: User Flow (user_flow.mmd). "
-            "Текст ниже извлекается из PDF без OCR.",
+            "Схема 2. User Flow — путь пользователя по одному чату "
+            "(исходник Mermaid: user_flow.mmd). Ветки short-circuit и основной chat path.",
             mono_style,
-            appendix_head_style,
+            diagram_head_style,
         )
     )
 

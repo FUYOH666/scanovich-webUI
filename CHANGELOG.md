@@ -19,12 +19,12 @@
 
 ### Changed
 
-- **`GPTHub_architecture_submission.pdf`:** сборка через **ReportLab** (встраиваемая
-  кириллица + мета-строка для парсеров) вместо Matplotlib; добавлены страницы
-  **приложения** с полным текстом Mermaid из `architecture.mmd` и `user_flow.mmd`
-  для текстового извлечения ИИ-жюри. Расширён
+- **`GPTHub_architecture_submission.pdf`:** только **текст** (ReportLab): кириллица,
+  мета `MachineReadableMeta`, полный Mermaid из `architecture.mmd` и `user_flow.mmd`
+  **без встроенных PNG** — схемы для конкурса как извлекаемый исходник. Ранее в PDF
+  вкладывались растровые PNG; PNG остаётся опциональным для `mmdc`/слайдов.
   [`ARCHITECTURE_SUBMISSION_RU.txt`](docs/submission/ARCHITECTURE_SUBMISSION_RU.txt).
-  Команда: `uv run --with reportlab --with pillow python scripts/build_submission_architecture_pdf.py`.
+  Команда: `uv run --with reportlab python scripts/build_submission_architecture_pdf.py`.
 - **`GPTHub_features_matrix.xlsx`:** пересобран с русскими заголовками и колонками
   «Категория», «Пояснение статуса (RU)», «Реализация в проекте (подробно, RU)»;
   добавлен лист «Справка» с расшифровкой кодов статуса. Скрипт
@@ -35,9 +35,9 @@
 ### Added
 
 - **Submission (один PDF):** [`docs/submission/GPTHub_architecture_submission.pdf`](docs/submission/GPTHub_architecture_submission.pdf)
-  — структурированный текст + две схемы PNG + приложения с исходниками Mermaid;
-  сборка [`scripts/build_submission_architecture_pdf.py`](scripts/build_submission_architecture_pdf.py)
-  (`uv run --with reportlab --with pillow`). Рендер диаграмм: `mmdc` (`@mermaid-js/mermaid-cli`).
+  — текст + встроенный Mermaid (без PNG внутри PDF); сборка
+  [`scripts/build_submission_architecture_pdf.py`](scripts/build_submission_architecture_pdf.py)
+  (`uv run --with reportlab`). Опциональный PNG: `mmdc` (`@mermaid-js/mermaid-cli`).
 - **Onboarding:** [`docs/STUDY_PATH_RU.md`](docs/STUDY_PATH_RU.md) — фазы A–C
   (чтение канона, карта кода по матрице, hands-on чеклист организаторов) и
   готовый **текст для сабмисона** (архитектура / сценарии / модели / зависимости).

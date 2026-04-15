@@ -1,11 +1,10 @@
 # GPTHub Prod — архитектура и User Flow (машиночитаемая версия для ИИ)
 
 Этот файл **UTF-8 Markdown** — зеркало для репозитория и RAG. **Файл сдачи**
-[`GPTHub_architecture_submission.pdf`](GPTHub_architecture_submission.pdf) теперь
-собирается через **ReportLab**: на первых страницах — нормально извлекаемая
-кириллица и мета-строка `MachineReadableMeta`; далее — PNG схем для людей и
-vision; в **приложении** — полный текст `architecture.mmd` / `user_flow.mmd`, чтобы
-текстовый ИИ-жюри мог прочитать граф **без OCR** по растру.
+[`GPTHub_architecture_submission.pdf`](GPTHub_architecture_submission.pdf) —
+**текстовый PDF** (ReportLab): кириллица + мета `MachineReadableMeta` + полный
+Mermaid из `architecture.mmd` и `user_flow.mmd` **внутри PDF**, **без** встроенных
+PNG. ИИ и человек читают схемы как текст.
 
 Если форма допускает только один PDF — **загружайте его**; этот `.md` не обязателен.
 
@@ -134,12 +133,7 @@ sequenceDiagram
 
 ---
 
-## Примечание по слоям одного PDF
+## Примечание
 
-- **Растровые страницы со схемами** по-прежнему требуют vision, если ИИ смотрит
-  только на картинку.
-- **Текстовые страницы + приложение Mermaid** закрывают сценарий «только
-  text extraction» для автоматической приёмки.
-
-Канон исходников диаграмм — файлы `.mmd` в этой папке; при их правке пересоберите
-PDF скриптом из [`docs/submission/README.md`](README.md).
+Канон схем — `.mmd` в этой папке; PDF дублирует их как текст. Визуальный PNG для
+слайдов — отдельно (`mmdc`). Пересборка PDF: [`docs/submission/README.md`](README.md).

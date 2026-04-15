@@ -1,6 +1,6 @@
 # GPTHub Prod — архитектура, сценарии, модели, зависимости (текст для PDF)
 
-Один файл для формы: GPTHub_architecture_submission.pdf (стр. 1–3 — для людей и vision; стр. 4+ — извлекаемый текст с исходниками Mermaid для ИИ-жюри). Исходники PNG: architecture.png, user_flow.png из .mmd.
+Один файл для формы: GPTHub_architecture_submission.pdf — **только текст** (кириллица + Mermaid-исходники схем внутри PDF, без встроенных PNG). Для слайдов PNG по-прежнему можно собрать из .mmd через mmdc.
 
 ## Поддерживаемые сценарии (единый чат Open WebUI)
 
@@ -14,7 +14,7 @@
 
 ## Контур сервисов и моделей (кратко)
 
-Пользователь → Open WebUI → orchestrator (ingest, classifier/router, memory, council, image-gen, PPTX, trace) → LiteLLM (алиасы) → MWS (чат, VLM, документы, reasoning). ASR, image-gen, эмбеддинги памяти — отдельные вызовы в MWS. Опционально: Tavily и embedding shim из WebUI (пунктир на схеме).
+Пользователь → Open WebUI → orchestrator (ingest, classifier/router, memory, council, image-gen, PPTX, trace) → LiteLLM (алиасы) → MWS (чат, VLM, документы, reasoning). ASR, image-gen, эмбеддинги памяти — отдельные вызовы в MWS. Опционально: Tavily и embedding shim из WebUI (пунктир на Mermaid-схеме ниже).
 
 ## User Flow (кратко)
 
@@ -34,4 +34,4 @@
 
 ## Диаграммы
 
-Исходники Mermaid: docs/submission/architecture.mmd, docs/submission/user_flow.mmd. Рендер PNG: mmdc (@mermaid-js/mermaid-cli). Полный текст Mermaid продублирован на последних страницах PDF для машинного извлечения.
+Ниже в PDF идут **две текстовые схемы** — полные файлы docs/submission/architecture.mmd и user_flow.mmd (Mermaid). Это и есть «схема» для конкурса: контур сервисов/моделей и User Flow по одному чату. Визуальный PNG для презентаций: mmdc (@mermaid-js/mermaid-cli), опционально.

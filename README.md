@@ -188,7 +188,7 @@ Optional `rag` support is infrastructure for Open WebUI, not a second flagship p
 - `FEATURE_MATRIX.md` — матрица фич для xlsx сдачи
 - `docs/LIVE_SMOKE.md` — журнал прогонов через Docker-стек
 - `docs/STUDY_PATH_RU.md` — чеклист изучения репо (фазы A–C) + текст для сабмисона
-- `docs/submission/` — экспорт xlsx, схемы, PDF архитектуры, **презентация на 10 слайдов** (`SLIDES_10_RU.md` → `GPTHub_defence_10slides.pptx` → PDF)
+- `docs/submission/` — экспорт xlsx, **PDF архитектуры** (текст + Mermaid без PNG), **презентация** (`SLIDES_10_RU.md` → `GPTHub_defence_10slides.pptx` → PDF)
 - `docs/MWS_CATALOG.md` — каталог моделей MWS
 - `docs/PROMPT_PRECEDENCE.md`, `docs/WEBUI_PAYLOAD.md`
 - `scripts/demo.sh` — идемпотентный curl-smoke (Demo Lock)
