@@ -6,9 +6,10 @@
   - из корня репо: `mmdc -i docs/submission/architecture.mmd -o docs/submission/architecture.png`
   - или без установки: `npx -y @mermaid-js/mermaid-cli -i docs/submission/architecture.mmd -o docs/submission/architecture.png`
 - **`user_flow.mmd`** — Mermaid: User Flow по **одному чату** (sequence: сообщение → orchestrator → ветки short-circuit / default chat → ответ + `X-GPTHub-Trace`). Экспорт: `mmdc -i docs/submission/user_flow.mmd -o docs/submission/user_flow.png`
-- **`architecture.png`**, **`user_flow.png`** — сгенерированные из `.mmd` (можно приложить к форме как отдельные PNG, если платформа позволяет несколько файлов).
-- **`ARCHITECTURE_SUBMISSION_RU.txt`** — краткий текст для поля «описание» + перечень файлов в архиве.
-- **`GPTHub_architecture_submission.zip`** — **один файл** для площадок с лимитом «макс. 1 файл / 10 МБ / zip»: внутри два PNG + текст (~100 KiB). Загрузить этот `.zip` в форму.
+- **`architecture.png`**, **`user_flow.png`** — промежуточный рендер из `.mmd` (нужны скрипту PDF).
+- **`ARCHITECTURE_SUBMISSION_RU.txt`** — исходный текст (сценарии, модели, зависимости); вклеивается в PDF.
+- **`GPTHub_architecture_submission.pdf`** — **единственный файл для загрузки** (лимит «1 файл / до 10 МБ / `.pdf`»): страница 1 — текст, страницы 2–3 — схемы (контур сервисов + User Flow). Сборка:
+  `uv run --with matplotlib --with pillow python scripts/build_submission_architecture_pdf.py`
 - **`gpthub-architecture.excalidraw`** — Empty Excalidraw scene placeholder; copy shapes from `architecture.mmd` or import the Mermaid where your Excalidraw build supports it.
 - **`SLIDES_SKELETON.md`** — Outline for 5–7 defence slides.
 

@@ -1,9 +1,9 @@
 GPTHub Prod — краткая архитектура и User Flow (сопроводительный текст)
 ================================================================================
 
-Файлы в этом же архиве:
-  • architecture.png — контур сервисов (User → Open WebUI → orchestrator → LiteLLM → MWS, short-circuit’ы, опции Tavily / embedding shim).
-  • user_flow.png — последовательность одного чата (ветки memory / image / PPTX / council / default chat).
+Для загрузки в форму используйте один файл: GPTHub_architecture_submission.pdf
+(текст этой страницы + две схемы). Исходники схем: architecture.png, user_flow.png
+(из Mermaid .mmd).
 
 ---
 
