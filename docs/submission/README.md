@@ -1,6 +1,6 @@
 # Submission artifacts (track C)
 
-- **`GPTHub_features_matrix.xlsx`** — regenerated from [FEATURE_MATRIX.md](../../FEATURE_MATRIX.md) via `uv run --with openpyxl python scripts/build_features_xlsx.py` from the repo root. Keep in sync with the matrix; treat the markdown file as canonical for wording and status rules.
+- **`GPTHub_features_matrix.xlsx`** — из [FEATURE_MATRIX.md](../../FEATURE_MATRIX.md) командой `uv run --with openpyxl python scripts/build_features_xlsx.py`. Лист **«Матрица фич»**: русские заголовки и пояснения, категория (обязательные / доп.), канонический статус EN + расшифровка RU + подробное описание реализации; лист **«Справка»** — словарь статусов. Канон формулировок — markdown-матрица.
 - **`architecture.mmd`** — Mermaid: контур сервисов (User → Open WebUI → orchestrator → LiteLLM → MWS, ingest / memory / image-gen / PPTX / council / trace, опционально Tavily и embedding shim). Экспорт в PNG (нужен **`mmdc`** из пакета **`@mermaid-js/mermaid-cli`**):
   - один раз: `npm install -g @mermaid-js/mermaid-cli`
   - из корня репо: `mmdc -i docs/submission/architecture.mmd -o docs/submission/architecture.png`

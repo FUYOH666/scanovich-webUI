@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **`GPTHub_features_matrix.xlsx`:** пересобран с русскими заголовками и колонками
+  «Категория», «Пояснение статуса (RU)», «Реализация в проекте (подробно, RU)»;
+  добавлен лист «Справка» с расшифровкой кодов статуса. Скрипт
+  [`scripts/build_features_xlsx.py`](scripts/build_features_xlsx.py). В
+  [`FEATURE_MATRIX.md`](FEATURE_MATRIX.md) уточнены формулировки рядов 9, 13, 15
+  на русском.
+
 ### Added
 
 - **Submission (один PDF):** [`docs/submission/GPTHub_architecture_submission.pdf`](docs/submission/GPTHub_architecture_submission.pdf)
