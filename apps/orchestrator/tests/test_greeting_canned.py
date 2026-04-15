@@ -14,6 +14,7 @@ os.environ["LITELLM_BASE_URL"] = "http://litellm.test:4000"
 os.environ["ORCHESTRATOR_API_KEY"] = "test-key"
 
 from gpthub_orchestrator.main import app  # noqa: E402
+from gpthub_orchestrator.orchestrator_help import greeting_help_footer  # noqa: E402
 from gpthub_orchestrator.response_preamble_strip import assistant_content_has_leak_substrings  # noqa: E402
 from gpthub_orchestrator.settings import Settings  # noqa: E402
 
@@ -44,7 +45,7 @@ async def test_greeting_canned_skips_litellm_non_stream():
         assert r.status_code == 200
         assert calls == []
         data = r.json()
-        assert data["choices"][0]["message"]["content"] == "Hi canned"
+        assert data["choices"][0]["message"]["content"] == "Hi canned" + greeting_help_footer()
         trace_hdr = r.headers.get("X-GPTHub-Trace")
         assert trace_hdr
         trace = json.loads(base64.b64decode(trace_hdr).decode("utf-8"))
@@ -219,7 +220,7 @@ async def test_casual_kak_dela_canned_skips_litellm():
             )
         assert r.status_code == 200
         assert calls == []
-        assert r.json()["choices"][0]["message"]["content"] == "Отлично, готов помочь!"
+        assert r.json()["choices"][0]["message"]["content"] == "Отлично, готов помочь!" + greeting_help_footer()
     finally:
         await mock_inner.aclose()
 

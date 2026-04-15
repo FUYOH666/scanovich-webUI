@@ -44,16 +44,30 @@ def choose_model(classification: dict[str, Any], settings: Settings) -> dict[str
     elif task_type in ("summarization", "file_analysis"):
         role_key = ROLE_DOC
         reason = "document_or_summary_heuristic"
-    elif task_type in ("code_help", "multimodal_workflow"):
+    elif task_type in ("code_help", "multimodal_workflow", "pptx"):
         if settings.code_route_preference == "openrouter":
             role_key = ROLE_REASONING_OPENROUTER
-            reason = "code_or_deep_analysis_openrouter"
+            reason = (
+                "pptx_slide_plan_json_openrouter"
+                if task_type == "pptx"
+                else "code_or_deep_analysis_openrouter"
+            )
         else:
             role_key = ROLE_REASONING_LOCAL
-            reason = "code_or_deep_analysis_local_first"
+            reason = (
+                "pptx_slide_plan_json"
+                if task_type == "pptx"
+                else "code_or_deep_analysis_local_first"
+            )
     elif task_type == "greeting_or_tiny":
         role_key = ROLE_FAST_TEXT_CHAT
         reason = "greeting_or_tiny_chat"
+    elif task_type == "user_help":
+        role_key = ROLE_FAST_TEXT_CHAT
+        reason = "user_help_canned"
+    elif task_type == "image_generation":
+        role_key = ROLE_FAST_TEXT
+        reason = "image_generation_short_circuit_fallback"
     else:
         role_key = ROLE_FAST_TEXT
         reason = "default_text_chat"

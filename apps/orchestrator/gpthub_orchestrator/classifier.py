@@ -8,6 +8,8 @@ import re
 from enum import Enum
 from typing import Any
 
+from gpthub_orchestrator.council import is_open_webui_internal_completion_user_text
+
 logger = logging.getLogger(__name__)
 
 # Short acknowledgments / goodbyes stay on the light chat chain.
@@ -72,6 +74,24 @@ _SUBSTANTIVE_FACTUAL_QUESTION = re.compile(
     re.IGNORECASE | re.UNICODE,
 )
 
+_USER_HELP_NL = re.compile(
+    r"(?:^|\b)(?:что\s+ты\s+умеешь|что\s+умеешь|что\s+ты\s+можешь|что\s+можешь|"
+    r"что\s+умеет(?:\s+эта)?\s+(?:программа|система|модель|ты)\b|"
+    r"список\s+возможност|ваши?\s+возможност|как(?:ие)?\s+команды|"
+    r"покажи\s+помощь|нужна\s+помощь\s+по\s+(?:боту|сервису|оркестратору))\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def _is_user_help_request(text: str) -> bool:
+    """Свободная форма запроса возможностей / помощи (кроме таблицы ambiguous в semantic_classifier)."""
+    s = text.strip()
+    if not s:
+        return False
+    if re.match(r"^\s*/help\b", s, re.IGNORECASE):
+        return True
+    return bool(_USER_HELP_NL.search(s))
+
 
 def _is_greeting_or_tiny(text: str) -> bool:
     s = text.strip()
@@ -96,6 +116,8 @@ def _is_greeting_or_tiny(text: str) -> bool:
 
 
 class TaskType(str, Enum):
+    USER_HELP = "user_help"
+    IMAGE_GENERATION = "image_generation"
     SIMPLE_CHAT = "simple_chat"
     GREETING_OR_TINY = "greeting_or_tiny"
     CODE_HELP = "code_help"
@@ -104,8 +126,55 @@ class TaskType(str, Enum):
     IMAGE_ANALYSIS = "image_analysis"
     AUDIO_ANALYSIS = "audio_analysis"
     MULTIMODAL_WORKFLOW = "multimodal_workflow"
+    PPTX = "pptx"
     DEEP_RESEARCH = "deep_research"
     PPTX_GENERATION = "pptx_generation"
+
+
+# Shared with ``image_gen`` (verb + image noun); keep in sync via this fragment only.
+RU_IMPERATIVE_CREATE_VERBS = (
+    r"сделай|сделайте|создай|создайте|дай|дайте|подготовь|подготовьте|напиши|напишите|"
+    r"сгенерируй|сгенерируйте|составь|составьте"
+)
+
+# PPTX: strong phrases beat doc/code heuristics; weak cues stay below doc-heavy / code / analyze.
+_PPTX_STRONG = re.compile(
+    rf"(?:^|[\s,./])/pptx\b|(?:{RU_IMPERATIVE_CREATE_VERBS})\s+презентац|"
+    rf"\bпрезентац\w*\b[^.?!\n]{{0,50}}\b(?:{RU_IMPERATIVE_CREATE_VERBS})\b|"
+    r"презентаци[яию]\s+по\s+(?:этому|этой|этим|документу|тексту|файлу|материалу|теме)\b|"
+    r"build\s+(?:a\s+)?deck\b|"
+    r"make\s+(?:a\s+)?presentation\b|"
+    r"generate\s+(?:a\s+)?presentation\b",
+    re.IGNORECASE | re.UNICODE,
+)
+_PPTX_WEAK_SLIDES_RU = re.compile(
+    rf"(?:нужны|{RU_IMPERATIVE_CREATE_VERBS})\s+слайд",
+    re.IGNORECASE | re.UNICODE,
+)
+_PPTX_WEAK_EN = re.compile(
+    r"\b(?:outline|draft)\s+(?:a\s+)?deck\b|"
+    r"\bslides?\s+(?:for|about|on)\s+\w",
+    re.IGNORECASE | re.UNICODE,
+)
+_PPTX_WEAK_DECK_PAIR = re.compile(
+    r"\bdeck\b.*\b(?:slides?|презентац|pptx|powerpoint)\b|"
+    r"\b(?:slides?|презентац|pptx|powerpoint)\b.*\bdeck\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def _pptx_intent_strong(text: str) -> bool:
+    return bool(_PPTX_STRONG.search(text))
+
+
+def _pptx_intent_weak(text: str, lower: str) -> bool:
+    if _PPTX_WEAK_SLIDES_RU.search(lower):
+        return True
+    if _PPTX_WEAK_EN.search(lower):
+        return True
+    if len(text.strip()) < 32:
+        return False
+    return bool(_PPTX_WEAK_DECK_PAIR.search(lower))
 
 
 def _flatten_text(parts: list[dict[str, Any]] | str) -> str:
@@ -139,14 +208,70 @@ def _has_image_part(content: Any) -> bool:
     return False
 
 
-def classify_messages(messages: list[dict[str, Any]]) -> dict[str, Any]:
+def merge_transcript_artifacts_into_user_text(
+    last_user: str,
+    artifacts: list[dict[str, Any]] | None,
+) -> str:
+    """Append ASR transcript text so routing sees spoken intent, not only WebUI placeholders."""
+    if not artifacts:
+        return last_user
+    transcripts: list[str] = []
+    for a in artifacts:
+        if not isinstance(a, dict):
+            continue
+        if a.get("type") != "transcript":
+            continue
+        t = str(a.get("content", "")).strip()
+        if t:
+            transcripts.append(t)
+    if not transcripts:
+        return last_user
+    tail = "\n".join(transcripts)
+    base = last_user.strip()
+    if not base:
+        return tail
+    return f"{base}\n{tail}"
+
+
+def classify_messages(
+    messages: list[dict[str, Any]],
+    *,
+    ingest_artifacts: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Return modalities, task_type, complexity_hint for trace + router."""
-    has_image = any(_has_image_part(m.get("content")) for m in messages)
-    last_user = ""
+    last_user_msg: dict[str, Any] | None = None
     for m in reversed(messages):
         if m.get("role") == "user":
-            last_user = _message_text(m)
+            last_user_msg = m
             break
+
+    last_user = _message_text(last_user_msg) if last_user_msg else ""
+    # Image modality follows the current turn only — older turns with screenshots must not
+    # force vision routing when the latest user message is text/files-only (e.g. PDF after VLM).
+    has_image = _has_image_part(last_user_msg.get("content")) if last_user_msg else False
+
+    # Open WebUI embeds full <chat_history> (incl. RAG/web scrape noise). Do not run
+    # doc/code/analyze heuristics on that blob — e.g. "compare" from leaderboard nav
+    # false-triggers code_help and wastes gpt-hub-strong on JSON follow-up tasks.
+    if is_open_webui_internal_completion_user_text(last_user):
+        out = {
+            "modalities": ["text"],
+            "task_type": TaskType.SIMPLE_CHAT.value,
+            "complexity_score": 0,
+            "user_text_preview": last_user[:200],
+        }
+        log_payload = {
+            **out,
+            "classifier_layer": "heuristic_rule_based",
+            "classifier_source_resolved_by": "classifier.open_webui_synthetic_user_prompt",
+        }
+        logger.info(
+            "modality_classified",
+            extra={"extra": json.dumps(log_payload, ensure_ascii=False)},
+        )
+        return out
+
+    last_user = merge_transcript_artifacts_into_user_text(last_user, ingest_artifacts)
 
     lower = last_user.lower()
     code_hints = any(
@@ -185,7 +310,13 @@ def classify_messages(messages: list[dict[str, Any]]) -> dict[str, Any]:
     if has_image:
         modalities.append("image")
 
-    # Deep research / Expert Council wins over everything except multimodal.
+    pptx_strong = _pptx_intent_strong(last_user)
+    heavier_doc_or_code = doc_hints or code_hints or analyze_hints
+    pptx_weak_ok = _pptx_intent_weak(last_user, lower) and not heavier_doc_or_code
+    wants_pptx = pptx_strong or pptx_weak_ok
+
+    # Expert Council (deep research) wins over PPTX for text-only prompts; `is_council_request`
+    # is only evaluated without an image. Images: non-PPTX → image analysis; PPTX phrasing → pptx.
     # We lazy-import here to avoid a classifier↔council import cycle.
     deep_research_hit = False
     pptx_hit = False
@@ -196,14 +327,18 @@ def classify_messages(messages: list[dict[str, Any]]) -> dict[str, Any]:
         deep_research_hit = is_council_request(last_user)
         pptx_hit = is_pptx_request(last_user)
 
-    if has_image and (analyze_hints or code_hints):
+    if _is_user_help_request(last_user):
+        task = TaskType.USER_HELP
+    elif has_image and (analyze_hints or code_hints):
         task = TaskType.MULTIMODAL_WORKFLOW
-    elif has_image:
+    elif has_image and not wants_pptx:
         task = TaskType.IMAGE_ANALYSIS
     elif pptx_hit:
         task = TaskType.PPTX_GENERATION
     elif deep_research_hit:
         task = TaskType.DEEP_RESEARCH
+    elif wants_pptx:
+        task = TaskType.PPTX
     elif (doc_hints or long_text) and not has_image:
         task = TaskType.SUMMARIZATION if doc_hints else TaskType.FILE_ANALYSIS
     elif code_hints or analyze_hints:
@@ -220,6 +355,8 @@ def classify_messages(messages: list[dict[str, Any]]) -> dict[str, Any]:
         complexity += 1
     if analyze_hints:
         complexity += 1
+    if task == TaskType.PPTX:
+        complexity += 1
 
     out = {
         "modalities": modalities,
@@ -227,8 +364,13 @@ def classify_messages(messages: list[dict[str, Any]]) -> dict[str, Any]:
         "complexity_score": complexity,
         "user_text_preview": last_user[:200],
     }
+    log_payload = {
+        **out,
+        "classifier_layer": "heuristic_rule_based",
+        "classifier_source_resolved_by": "classifier.classify_messages",
+    }
     logger.info(
         "modality_classified",
-        extra={"extra": json.dumps(out, ensure_ascii=False)},
+        extra={"extra": json.dumps(log_payload, ensure_ascii=False)},
     )
     return out

@@ -26,18 +26,19 @@
 
 **Минус:** семантика роли («документ», «код») **не совпадала** с первым чекпоинтом — для сдачи продукта как «умный маршрутизатор под задачу» это слабее.
 
-## Текущая политика (реестр `version: 2`)
+## Текущая политика (реестр в репозитории)
 
-После выравнивания под смысл ролей (см. `CHANGELOG.md` [Unreleased]):
+Файл `data/model_roles.yaml` сейчас с **`version: 1`**. Цепочки (первый алиас = основной вызов):
 
-| Роль (`model_roles.yaml`) | Порядок алиасов (первый = основной) | Назначение |
-|---------------------------|-------------------------------------|------------|
-| `fast_text` / `fast_text_chat` | `gpt-hub-turbo` → … | обычный диалог, приветствия |
-| `doc_synthesis` | **`gpt-hub-doc`** → `gpt-hub-turbo` → … | summarization / file_analysis (длинный контекст, «документный» стиль) |
-| `reasoning_code_local` / `reasoning_code_openrouter` | **`gpt-hub-reasoning-or`** → `gpt-hub-turbo` → … | code_help / глубокий анализ кода (локальный vs openrouter — только ключ роли; цепочка одна) |
-| `vision_general` | `gpt-hub-vision` → … → `gpt-hub-fallback` | сообщения с изображением (VLM chain) |
+| Роль (`model_roles.yaml`) | Порядок алиасов | Назначение |
+|---------------------------|-----------------|------------|
+| `fast_text` / `fast_text_chat` | `gpt-hub-turbo` / `gpt-hub-fast` → … | обычный диалог, приветствия |
+| `doc_synthesis` | **`gpt-hub-doc`** → `gpt-hub-turbo` → `gpt-hub-fallback` | summarization / file_analysis |
+| `reasoning_code_local` | **`gpt-hub-strong`** → `gpt-hub-turbo` → `gpt-hub-fallback` | `code_help` при `CODE_ROUTE_PREFERENCE=local`, защитный маршрут для `pptx` |
+| `reasoning_code_openrouter` | **`gpt-hub-reasoning-or`** → `gpt-hub-strong` → `gpt-hub-fallback` | `code_help` при `CODE_ROUTE_PREFERENCE=openrouter` |
+| `vision_general` | `gpt-hub-vision` → … → `gpt-hub-fallback` | VLM |
 
-**Принцип:** *специалист первым*, **`gpt-hub-turbo` (alpha) вторым** как быстрый и стабильный откат, затем **`gpt-hub-fallback`** (gemma) на крайний случай.
+**Целевая** политика «специалист первым, затем `gpt-hub-turbo`, затем fallback» для code-ролей описана выше как направление развития; пока локальный code-путь начинается с **`gpt-hub-strong`** (см. YAML). Если правите реестр — обновляйте этот файл в том же PR.
 
 Отдельно от реестра (всегда смотреть `settings.py`):
 

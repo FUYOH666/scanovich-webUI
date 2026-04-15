@@ -13,6 +13,7 @@ os.environ["ORCHESTRATOR_LITELLM_FALLBACK"] = "true"
 
 from gpthub_orchestrator.main import app  # noqa: E402
 from gpthub_orchestrator.model_registry import load_model_roles  # noqa: E402
+from gpthub_orchestrator.role_prompts import load_role_prompts  # noqa: E402
 from gpthub_orchestrator.settings import Settings  # noqa: E402
 
 
@@ -55,6 +56,7 @@ async def test_non_stream_retries_on_429_then_200():
                 auto_route_model=True,
                 orchestrator_litellm_fallback=True,
                 orchestrator_fallback_max_attempts=4,
+                classifier_semantic_enabled=False,
             )
             app.state.http = mock_inner
             r = await ac.post(
@@ -75,7 +77,7 @@ async def test_non_stream_retries_on_429_then_200():
         trace = json.loads(raw)
         assert trace["orchestrator_fallback"]["retries_after_failure"] == 1
         assert trace["orchestrator_fallback"]["model_selected"] == "gpt-hub-fallback"
-        assert trace["prompt_version"] == "v0.5.2"
+        assert trace["prompt_version"] == load_role_prompts().prompt_version
         assert trace["classifier_source"] == "heuristic"
         assert trace["fallback_used"] is True
         assert trace.get("server_clock_iso")

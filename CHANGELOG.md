@@ -21,73 +21,44 @@
 
 ### Changed
 
-- **Router / `model_roles.yaml`:** `doc_synthesis` now starts with **`gpt-hub-doc`**
-  (qwen2.5-72b-instruct); `reasoning_code_local` / `reasoning_code_openrouter` start
-  with **`gpt-hub-reasoning-or`** (qwen3-coder-480b), each with **`gpt-hub-turbo`**
-  as second-step fallback before `gpt-hub-fallback`. Aligns classifier roles with
-  MWS capabilities for submission demos (was alpha-first for all non-vision roles).
+- **Docs (PPTX / test count):** `FEATURE_MATRIX.md` row 14 → **Implemented (WOW-3)**
+  для пакета `gpthub_orchestrator/pptx/`, выдачи **`GET /artifacts/pptx/{id}?token=…`**,
+  порядка short-circuit (memory → council → image-gen → pptx) и **36** pptx-тестов;
+  `README.md`, `ROADMAP.md` (§0.2 row 14, §0.3 scope, шаг 7, §0.6, Demo Lock, трек A),
+  `docs/TEAM_BRIEF_RU.md`, `docs/NEW_CHAT_HANDOFF_RU.md`, `docs/LIVE_SMOKE.md`
+  (устаревшие формулировки data-URI / «PPTX не реализован») — приведены к текущему коду.
+  Базовый счётчик: **226+** тестов (`uv run pytest`); на других снимках ветки встречались **255** / **261** — ориентиром остаётся вывод pytest на вашей машине.
+  Пересобран `docs/submission/GPTHub_features_matrix.xlsx` из матрицы.
+- **Docs:** канон [`docs/MODEL_ROUTING_POLICY.md`](docs/MODEL_ROUTING_POLICY.md)
+  — baseline и политика ролей; **фактический** реестр —
+  `gpthub_orchestrator/data/model_roles.yaml` (`version: 1`, цепочки как в файле).
 - **Docs (web search UX):** `ARCHITECTURE.md`, `FEATURE_MATRIX.md` row 7,
-  `docs/LIVE_SMOKE.md` — зафиксировано поведение «счётчик источников / источники не
-  найдены» при `BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL`: поиск встраивается в
-  сообщения, панель цитат WebUI может оставаться пустой.
-- **Docs:** новый канон [`docs/MODEL_ROUTING_POLICY.md`](docs/MODEL_ROUTING_POLICY.md)
-  — исходная alpha-first политика baseline и текущая политика реестра ролей
-  `model_roles.yaml` version 2; ссылки из `README.md`, `NEW_CHAT_HANDOFF_RU.md`,
-  `TEAM_BRIEF_RU.md`, `ROADMAP.md`.
-- **PPTX JSON parsing:** tolerate instruct models that append prose after a valid
-  top-level JSON object (`json.JSONDecoder().raw_decode`) — improves compatibility
-  when benchmarking or routing PPTX through chatty instruct checkpoints.
-- **Docs:** full sync all canon docs (ROADMAP, README, TEAM_BRIEF_RU,
-  NEW_CHAT_HANDOFF_RU, FEATURE_MATRIX) with WOW-1 Council + WOW-3 PPTX
-  state, **261** tests, victory-plan step statuses (Steps 1–5, 7 closed,
-  6/8/9 planned). Regenerated `docs/submission/GPTHub_features_matrix.xlsx`.
-- **Docs drift fix:** Row 9 memory test count (было ошибочно «52») → ~30 в
-  `test_memory_*.py`; убраны устаревшие **WARN=1** из‑за PPTX в `demo.sh`;
-  `LIVE_SMOKE.md` — follow-up про флаппи **ReadTimeout** на MWS embeddings;
-  `.env.example` — комментарий `MEMORY_EMBEDDING_TIMEOUT_SECONDS`.
-- **Verification (2026-04-11):** `uv run pytest` → 261 passed, 2 skipped;
-  `docker compose … up -d --build` + full `scripts/demo.sh` → **PASS=13**
-  FAIL=0 WARN=0; запись в `docs/LIVE_SMOKE.md` (пояснение PASS=13 vs
-  устаревшие PASS=12 в старых журналах).
+  `docs/LIVE_SMOKE.md` — поведение «счётчик источников / источники не найдены» при
+  `BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL`: поиск встраивается в ответ, панель цитат WebUI может расходиться с телом сообщения.
+- **PPTX JSON parsing:** устойчивость к prose после валидного top-level JSON
+  (`json.JSONDecoder().raw_decode`) в плане слайдов — см. `pptx/parse.py` и связанные пути;
+  упрощает бенчмарки и «болтливые» instruct-модели.
+- **Docs drift fix:** Row 9 memory — актуальное число тестов см. `test_memory_*.py` и `uv run pytest`;
+  `LIVE_SMOKE.md` — ReadTimeout на MWS embeddings; `.env.example` —
+  `MEMORY_EMBEDDING_TIMEOUT_SECONDS` в блоке Embeddings.
+- **Verification (снимок 2026-04-11):** на одном стенде `uv run pytest` → 261 passed, 2 skipped;
+  `demo.sh` → **PASS=13** FAIL=0 WARN=0 — см. `docs/LIVE_SMOKE.md` (число шагов `demo.sh` может отличаться от **PASS=12** в более ранних журналах).
 
 ### Fixed
 
-- **PPTX plan JSON parse failures (MWS `<think>` CoT):** `gpt-hub-strong`
-  (glm-4.6-357b) wraps output in `<think>...</think>` Chinese CoT blocks
-  before the actual JSON. Added `_strip_cot_blocks()` to `pptx_gen.py`
-  that removes `<think>` tags before JSON parsing. First live PPTX
-  generation confirmed 2026-04-12: 7-slide deck, 35 KB, download OK.
-- **PPTX intent patterns broadened:** added «в формате pptx», «формат pptx»
-  patterns so natural-language phrases like «давай, в формате pptx будет?»
-  now trigger the PPTX short-circuit. 52 → 56 unit tests.
+- **PPTX plan JSON / MWS CoT:** где ответ модели содержит `<think>…`
+  до JSON, очистка перед парсингом (в т.ч. `pptx_gen.py` для альтернативных путей);
+  расширены паттерны intent («в формате pptx», «формат pptx»). Live-прогоны —
+  `docs/LIVE_SMOKE.md`.
 
 ### Added
 
-- **Row 14 WOW-3 PPTX generation**: new
-  `apps/orchestrator/gpthub_orchestrator/pptx_gen.py` with RU/EN/slash
-  intent detection (`/pptx`, `/slides`, «сделай презентацию», «build a
-  deck»), JSON slide-plan request to `gpt-hub-strong` (glm-4.6-357b)
-  with one retry on parse failure, `python-pptx` deck builder (title +
-  bullet slides), file storage + unguessable-token download endpoint
-  `GET /v1/files/pptx/{token}`, OpenAI-compatible `chat.completion`
-  response with markdown download link. Classifier
-  `TaskType.PPTX_GENERATION`, router fallback, wired into `main.py`
-  between council and image-gen short-circuits. 52 unit tests in
-  `tests/test_pptx_gen.py` (intent detection, JSON parsing + fence
-  strip, plan validation including edge cases, python-pptx round-trip,
-  storage CRUD, mock LiteLLM plan request with retry, end-to-end
-  generation, response builders, classifier + router wiring). Settings:
-  `pptx_enabled`, `pptx_plan_model`, `pptx_plan_timeout_seconds`,
-  `pptx_plan_max_tokens`, `pptx_min_slides`, `pptx_max_slides`,
-  `pptx_storage_dir`, `pptx_public_base_url`. Row 14 moved from
-  `Deferred (wow candidate)` to `Implemented (WOW-3)` in
-  `FEATURE_MATRIX.md`.
 - **Row 6 DOCX/XLSX/PPTX support via markitdown**: new
   `apps/orchestrator/gpthub_orchestrator/ingest/richdoc.py` — detection
   by MIME + extension for `.docx/.xlsx/.pptx/.doc/.xls/.ppt/.rtf/.epub`,
   conversion via Microsoft `markitdown` library to markdown text, wired
-  into `ingest/pipeline.py` between PDF and plain-text routing. 21
-  tests in `tests/test_ingest_richdoc.py` (detection, real DOCX/XLSX/PPTX
+  into `ingest/pipeline.py` between PDF and plain-text routing. Tests in
+  `tests/test_ingest_richdoc.py` (detection, real DOCX/XLSX/PPTX
   round-trip, garbage fallback, empty rejection, pipeline routing).
 - **Row 7 Tavily web search**: env vars already in `.env` and
   `.env.example` (`ENABLE_WEB_SEARCH=true`, `WEB_SEARCH_ENGINE=tavily`,
@@ -251,14 +222,15 @@
 
 ### Validation
 
-- 63 → 259 tests passing (+171 new tests covering URL parsing, plain-text
+- 63 → **182** tests passing (+119 new tests covering URL parsing, plain-text
   ingest, ASR settings fallback, image generation intent and response
   shape, memory command parser, SQLite store CRUD + cosine search,
   MWS embeddings client, the end-to-end memory command executor with
-  MockTransport, the Expert Council fan-out / synthesis / fallback
-  / CoT-strip / classifier wiring, and PPTX intent detection / JSON plan
-  parsing / python-pptx builder / storage / end-to-end generation /
-  response builders / classifier + router wiring).
+  MockTransport, and the Expert Council fan-out / synthesis / fallback
+  / CoT-strip / classifier wiring).
+- Дальнейший рост набора: **226** тестов на PPTX-ветке (до markitdown);
+  после ingest **DOCX/XLSX/PPTX** через markitdown — снова `uv run pytest`
+  (в cherry-pick `fa1d548` фигурировало **255**).
 - MWS contracts directly probed with curl against `.env.mws.local`:
   - `POST /v1/chat/completions` with `mws-gpt-alpha` → 200 OK.
   - `POST /v1/images/generations` with `qwen-image` → 200 OK (URL + b64).
@@ -267,11 +239,14 @@
 
 ### Not yet done (tracked in ROADMAP section 0)
 
-- Operator-level live verification for rows 2, 4, 5, 6, 11 (Step 6).
+- Row 7: enable Open WebUI Tavily web search via env.
+- Operator live checklist (WebUI voice, uploads, Tavily, manual model row11, PPTX link) — журнал `docs/LIVE_SMOKE.md`.
+- Live E2E smoke through the docker stack (blocked on stopping the old
+  `gpthub-v3-*` stack that holds ports 3000/4000/8089).
 - Architecture diagram PNG/SVG.
 - Demo video 2–3 minutes.
-- Presentation deck finalization.
-- git tag `demo-ready`.
+- Filled `GPTHub шаблон фич.xlsx`.
+- Presentation deck.
 
 ## [earlier]
 

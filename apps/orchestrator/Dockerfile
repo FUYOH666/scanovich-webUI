@@ -4,6 +4,7 @@ WORKDIR /app
 
 COPY apps/orchestrator/pyproject.toml apps/orchestrator/uv.lock apps/orchestrator/README.md ./
 COPY apps/orchestrator/gpthub_orchestrator ./gpthub_orchestrator
+COPY apps/orchestrator/assets/pttx ./assets/pttx
 
 RUN uv sync --frozen --no-dev
 
