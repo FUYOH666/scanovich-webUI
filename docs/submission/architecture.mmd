@@ -1,19 +1,46 @@
-%% GPTHub prod — one-slide architecture (Mermaid). Export to PNG for decks if needed.
-flowchart LR
-  subgraph ux [OpenWebUI]
-    WebUI[Open_WebUI]
+%% GPTHub prod — service contour + side paths. Export to PNG for submission / slides.
+%% mmdc: npx -y @mermaid-js/mermaid-cli -i docs/submission/architecture.mmd -o docs/submission/architecture.png
+flowchart TB
+  subgraph ux [User]
+    U[User_single_chat]
   end
-  subgraph spine [Runtime_spine]
-    Orch[Orchestrator]
-    Lite[LiteLLM]
+  subgraph webui [OpenWebui]
+    OW[OpenWebUI_UI]
   end
-  subgraph upstream [MWS]
-    MWS[MWS_models]
+  subgraph orchLayer [Orchestrator_FastAPI]
+    OR[Orchestrator]
+    IN[Ingest_pipeline]
+    MEM[Memory_SQLite_plus_MWS_embeddings]
+    IMG[Image_gen_MWS]
+    PPTX[PPTX_plan_build_artifacts]
+    COUNCIL[Expert_Council_fanout]
+    TR[X-GPTHub-Trace]
   end
-  WebUI -->|"OpenAI_API_BASE_URL"| Orch
-  Orch --> Lite
-  Lite --> MWS
-  Orch -.->|ingest| Ingest[ingest_PDF_URL_audio_ASR]
-  Orch -.->|memory| Mem[SQLite_plus_embeddings]
-  Orch -.->|image_gen| Img["MWS_/images/generations"]
-  Orch -.->|trace| Trace["X-GPTHub-Trace"]
+  subgraph gateway [LiteLLM]
+    LL[LiteLLM_alias_layer]
+  end
+  subgraph mws [MWS_upstream]
+    M[MWS_models_chat_VLM_doc_reasoning]
+    MW[whisper_ASR]
+    MI[qwen_image]
+    ME[qwen3_embedding]
+  end
+  subgraph ext [External_optional]
+    TV[Tavily_via_WebUI_web_search]
+    SH[Embedding_shim_optional_rag_profile]
+  end
+  U --> OW
+  OW -->|"OpenAI_compatible_POST"| OR
+  OR --> IN
+  OR --> MEM
+  OR --> IMG
+  OR --> PPTX
+  OR --> COUNCIL
+  OR --> TR
+  OR -->|"chat_completion_path"| LL
+  LL --> M
+  OR -->|"ASR_path"| MW
+  IMG --> MI
+  MEM --> ME
+  OW -.-> TV
+  OW -.-> SH

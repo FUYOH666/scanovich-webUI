@@ -4,6 +4,12 @@
 
 ### Added
 
+- **Onboarding:** [`docs/STUDY_PATH_RU.md`](docs/STUDY_PATH_RU.md) — фазы A–C
+  (чтение канона, карта кода по матрице, hands-on чеклист организаторов) и
+  готовый **текст для сабмисона** (архитектура / сценарии / модели / зависимости).
+- **Submission diagrams:** [`docs/submission/user_flow.mmd`](docs/submission/user_flow.mmd)
+  (User Flow в одном чате); расширен [`docs/submission/architecture.mmd`](docs/submission/architecture.mmd);
+  [`docs/submission/README.md`](docs/submission/README.md) — команды `mmdc` для PNG.
 - **Open WebUI web search prod default:** `.env.example` documents and defaults
   **`BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=true`** so Tavily results are not
   routed through WebUI vector embedding when no embedding engine is configured
@@ -18,6 +24,12 @@
   plan/build seconds per alias. Optional prod switch: `PPTX_PLAN_MODEL` env
   (default remains `gpt-hub-strong`).
 - **Unit:** `tests/test_litellm_pptx_bench_aliases.py` asserts new YAML entries exist.
+
+### Fixed
+
+- **`sanitize_for_log`:** длинные обычные строки снова **обрезаются** по
+  `content_str_clip`, а не целиком редактятся из‑за порога `url_len_threshold`
+  (регресс после слияния; `tests/test_payload_log.py`).
 
 ### Changed
 

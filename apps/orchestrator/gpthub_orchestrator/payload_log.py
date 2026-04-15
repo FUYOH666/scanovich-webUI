@@ -24,10 +24,13 @@ def sanitize_for_log(
     if obj is None or isinstance(obj, (bool, int, float)):
         return obj
     if isinstance(obj, str):
-        if obj.startswith("data:") or len(obj) > url_len_threshold:
+        # data: URLs are always redacted; other long strings clip (dict keys like
+        # "url" / "detail" apply url_len_threshold separately).
+        if obj.startswith("data:"):
             return f"<redacted str len={len(obj)}>"
         if len(obj) > content_str_clip:
-            return obj[: content_str_clip - 24] + f"... <truncated {len(obj)} chars>"
+            clip = max(0, content_str_clip - 24)
+            return obj[:clip] + f"... <truncated {len(obj)} chars>"
         return obj
     if isinstance(obj, list):
         return [

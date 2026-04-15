@@ -187,6 +187,7 @@ Optional `rag` support is infrastructure for Open WebUI, not a second flagship p
 - `ROADMAP.md` — §0.4 (план), 0.5 (kill switches), 0.6 (чеклист)
 - `FEATURE_MATRIX.md` — матрица фич для xlsx сдачи
 - `docs/LIVE_SMOKE.md` — журнал прогонов через Docker-стек
+- `docs/STUDY_PATH_RU.md` — чеклист изучения репо (фазы A–C) + текст для сабмисона
 - `docs/submission/` — экспорт xlsx, схемы, черновики слайдов
 - `docs/MWS_CATALOG.md` — каталог моделей MWS
 - `docs/PROMPT_PRECEDENCE.md`, `docs/WEBUI_PAYLOAD.md`

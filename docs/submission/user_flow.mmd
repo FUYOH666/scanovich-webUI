@@ -1,0 +1,31 @@
+%% GPTHub prod — User Flow (single chat). Export to PNG for submission / slides.
+%% mmdc: npx -y @mermaid-js/mermaid-cli -i docs/submission/user_flow.mmd -o docs/submission/user_flow.png
+sequenceDiagram
+  participant User
+  participant WebUI as OpenWebUI
+  participant Orch as Orchestrator
+  participant Lite as LiteLLM
+  participant MWS as MWS_models
+  User->>WebUI: Message_and_optional_attachments_same_thread
+  WebUI->>Orch: POST_v1_chat_completions_OpenAI_shape
+  Note over Orch: Ingest_files_URL_audio_classify_route
+  alt Memory_command_short_circuit
+    Orch-->>WebUI: Reply_without_LiteLLM
+  else Image_intent_short_circuit
+    Orch->>MWS: Images_generations
+    Orch-->>WebUI: Markdown_inline_image_plus_trace
+  else PPTX_intent_short_circuit
+    Orch->>Lite: Slide_plan_models_alias
+    Lite->>MWS: Plan_completion
+    Orch-->>WebUI: Markdown_preview_plus_download_link_plus_trace
+  else Expert_council_short_circuit
+    Orch->>Lite: Parallel_expert_models
+    Lite->>MWS: Fanout_and_synthesis
+    Orch-->>WebUI: Single_synthesized_reply_plus_trace
+  else Default_chat_path
+    Orch->>Lite: Routed_alias_gpt-hub-asterisk
+    Lite->>MWS: Upstream_chat_completion
+    MWS-->>Lite: Tokens
+    Lite-->>Orch: OpenAI_compatible_chunk_or_json
+    Orch-->>WebUI: Assistant_content_plus_X-GPTHub-Trace
+  end
