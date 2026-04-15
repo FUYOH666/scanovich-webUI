@@ -4,6 +4,10 @@
 
 ### Added
 
+- **Submission bundle:** [`docs/submission/GPTHub_architecture_submission.zip`](docs/submission/GPTHub_architecture_submission.zip)
+  — один `.zip` (два PNG из Mermaid + `ARCHITECTURE_SUBMISSION_RU.txt`) для
+  загрузки в форму с лимитом «1 файл / 10 МБ / zip»; рендер через
+  `@mermaid-js/mermaid-cli` (`mmdc`).
 - **Onboarding:** [`docs/STUDY_PATH_RU.md`](docs/STUDY_PATH_RU.md) — фазы A–C
   (чтение канона, карта кода по матрице, hands-on чеклист организаторов) и
   готовый **текст для сабмисона** (архитектура / сценарии / модели / зависимости).
