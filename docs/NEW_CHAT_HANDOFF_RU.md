@@ -231,16 +231,18 @@ Trace принадлежит логам и `X-GPTHub-Trace`, не `content`.
 
 ## 11. Команды для старта
 
+Канон Docker и env: [`docs/LOCAL_RUN_RU.md`](LOCAL_RUN_RU.md) — **`make docker-up`** из **корня** репозитория (два `--env-file` и `--profile rag` задаёт `Makefile`; не запускать compose из `infra/` без env — сломается подстановка `OPEN_WEBUI_IMAGE` и пути `env_file` в YAML).
+
 ```bash
 # 0. Остановить старый v3-стек, если он поднят (иначе порты 3000/4000/8089 заняты)
 docker rm -f gpthub-v3-orchestrator gpthub-v3-embedding-shim gpthub-v3-open-webui gpthub-v3-litellm 2>/dev/null || true
 
-# 1. Проверить env
-cp .env.example .env                              # если ещё нет
-# .env.mws.local уже содержит рабочий MWS_GPT_API_KEY
+# 1. Env из корня репо
+make bootstrap-env    # если ещё нет .env / .env.mws.local из шаблонов (см. LOCAL_RUN_RU)
+# Отредактируй .env и .env.mws.local (MWS_GPT_API_KEY и остальное)
 
 # 2. Поднять prod stack
-docker compose -f infra/docker-compose.yml up -d --build
+make docker-up
 
 # 3. Тесты orchestrator
 cd apps/orchestrator

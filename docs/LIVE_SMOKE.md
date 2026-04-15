@@ -10,6 +10,8 @@
 > Датированные записи ниже ведутся **по возрастанию времени** (старые выше,
 > новые ниже, непосредственно перед разделом «Шаг 1»).
 
+> **Канон Docker:** запуск и остановка только из **корня** репозитория — [`docs/LOCAL_RUN_RU.md`](LOCAL_RUN_RU.md): **`make docker-up`**, **`make docker-down`**, при необходимости **`make docker-rebuild`**. Внутри Makefile подставляет `docker compose` с **`--env-file .env`**, **`--env-file .env.mws.local`**, **`-f infra/docker-compose.yml`**, **`--profile rag`**. В записях ниже команды приведены как **исторический факт** прогона; для повтора используйте канон, не копируйте устаревшие однострочники без env.
+
 ## Формат записи
 
 ```
@@ -33,7 +35,7 @@
 ## 2026-04-11 — Verification package: pytest + compose rebuild + `demo.sh`
 
 - **Stack commit:** `fa1d548` (`main`).
-- **Env:** `.env` + `.env.mws.local`; `docker compose -f infra/docker-compose.yml up -d --build` (образ `orchestrator` пересобран).
+- **Env:** `.env` + `.env.mws.local`; **`make docker-up`** (образ `orchestrator` пересобран; канон — два `--env-file` и `--profile rag`, см. преамбулу журнала).
 - **Input:** (1) `cd apps/orchestrator && uv sync --extra dev && uv run pytest -q` (2) `./scripts/demo.sh` с `ORCHESTRATOR_URL=http://localhost:8089` и ключом из `.env` (тот же, что WebUI / `LITELLM_MASTER_KEY`).
 - **Result:** pytest **261 passed, 2 skipped**. `demo.sh` **PASS=13 FAIL=0 WARN=0** (полный прогон с WOW-1 + WOW-3, ~7 min; доминирует council).
 - **Notes:** Счётчик `PASS` в скрипте — число вызовов `ok` (сейчас **13**: два health-check, каталог моделей, два чека по тексту, URL, image, два по memory, два по classifier, council, PPTX). В старых журналах встречается **PASS=12** — это сдвиг счётчика/чеклиста, не регрессия. Memory remember+recall в этом прогоне **OK**. **Остатки для команды (без кода):** `ROADMAP.md` Step 6 (operator WebUI), Step 8 (demo-video), Step 9 (`demo-ready` + финальные артефакты).
@@ -41,7 +43,7 @@
 ## 2026-04-11 — Step 1 teardown legacy v3 stack
 
 - **Stack commit:** tag `smoke-green` on `main` (resolve SHA with `git rev-parse --short HEAD`)
-- **Env:** `.env` bootstrapped from `.env.example` with local-only auth placeholders (not committed); `.env.mws.local` present for LiteLLM→MWS (secrets not logged).
+- **Env:** `.env` из **`make bootstrap-env`** / `bootstrap.env.example` с локальными placeholder-значениями (не коммитим); `.env.mws.local` для LiteLLM→MWS (секреты не логируем).
 - **Input:** `docker rm -f gpthub-v3-orchestrator gpthub-v3-embedding-shim gpthub-v3-open-webui gpthub-v3-litellm`
 - **Model(s) used:** _n/a_
 - **Latency:** under 1 s (CLI)
@@ -52,8 +54,8 @@
 ## 2026-04-11 — Step 1 prod compose bring-up
 
 - **Stack commit:** tag `smoke-green` on `main` (resolve SHA with `git rev-parse --short HEAD`)
-- **Env:** same as above; compose file `infra/docker-compose.yml`; no `rag` profile.
-- **Input:** `docker compose -f infra/docker-compose.yml up -d --build`
+- **Env:** same as above; compose file `infra/docker-compose.yml`; в тот момент без профиля `rag` (текущий канон — **всегда** `--profile rag`, см. `LOCAL_RUN_RU.md`).
+- **Input:** (как в CLI того дня) `docker compose -f infra/docker-compose.yml up -d --build` без явных `--env-file` в журнале — **для повтора:** из корня **`make docker-up`**.
 - **Model(s) used:** _n/a_
 - **Latency:** orchestrator image build ~2 min cold; total bring-up ~20 s after images warm
 - **Result:** OK
@@ -85,9 +87,7 @@
   in v0.8.12 source (`/app/backend/open_webui/retrieval/utils.py:1028`)
   that the bypass branch reads `file_object.data.get('content', '')`
   directly and never calls the embedding function.
-- **Recovery:** `docker compose -f infra/docker-compose.yml up -d
-  --force-recreate open-webui` (compose recreated all three services
-  because they share the .env env_file). All three back to `Healthy`;
+- **Recovery:** из **корня** репо `docker compose --env-file .env --env-file .env.mws.local -f infra/docker-compose.yml --profile rag up -d --force-recreate open-webui` (compose пересоздал связанные сервисы из‑за общего `env_file`). All three back to `Healthy`;
   `curl http://localhost:3000/health` → 200.
 - **Status:** **Awaiting live retry by operator** — re-upload the same
   PDF and either confirm the chat response or capture the new error.
@@ -104,7 +104,7 @@
   **`BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL`** (`config.py` PersistentConfig).
 - **Fix:** set **`BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=true`** in `.env` (see `.env.example`) **or**
   Admin → Settings → Web Search → enable **«Обход встраивания и извлечения данных»** for web search,
-  then `docker compose -f infra/docker-compose.yml up -d --force-recreate open-webui`.
+  then из **корня** `docker compose --env-file .env --env-file .env.mws.local -f infra/docker-compose.yml --profile rag up -d --force-recreate open-webui`.
   If the value was persisted earlier in the DB, use Admin UI or `ENABLE_PERSISTENT_CONFIG=false` per Open WebUI docs.
 - **Status:** bypass env live in container; operator smoke ongoing.
 
@@ -235,7 +235,7 @@
 ## 2026-04-11 — Step 1 WebUI smoke (текст + PDF + картинка), ROADMAP §0.4
 
 - **Stack commit:** `647d49d`
-- **Env:** `docker compose -f infra/docker-compose.yml`; Open WebUI `http://localhost:3000`; `.env` / `.env.mws.local` как в рабочем прогоне (секреты не логируем).
+- **Env:** стек как после **`make docker-up`**; Open WebUI `http://localhost:3000`; `.env` / `.env.mws.local` как в рабочем прогоне (секреты не логируем).
 - **Input:** (1) текстовый вопрос в чате — ответ получен; (2) запрос на генерацию картинки (в духе «нарисуй кота») — картинка сгенерировалась; (3) PDF с вопросом — **ошибка**, чтение/ингест PDF не прошёл.
 - **Model(s) used:** _по UI/trace не выписывались в этой записи_
 - **Latency:** _—_
@@ -248,7 +248,7 @@
 ## 2026-04-11 — Step 1 WebUI RAG smoke (PDF + retrieval), post-fix
 
 - **Stack commit:** _—_ (актуальный SHA: `git -C scanovich-webUI rev-parse --short HEAD`)
-- **Env:** `docker compose -f infra/docker-compose.yml --profile rag up -d --build`; `.env` + `.env.mws.local` (секреты не логируем). WebUI: `RAG_EMBEDDING_ENGINE=openai`, `RAG_OPENAI_API_BASE_URL=http://embedding-shim:8000/v1`, `RAG_EMBEDDING_MODEL=qwen3-embedding-8b`, `RAG_OPENAI_API_KEY` — тот же Bearer, что для MWS (`MWS_GPT_API_KEY`). Shim: `BGE_EMBEDDING_UPSTREAM=https://api.gpt.mws.ru` **или** только `MWS_GPT_API_BASE` в mws.local (без дубля `/v1/v1` в пути к `/embeddings`).
+- **Env:** **`make docker-up`** (эквивалент compose с двумя `--env-file` и `--profile rag`); `.env` + `.env.mws.local` (секреты не логируем). WebUI: `RAG_EMBEDDING_ENGINE=openai`, `RAG_OPENAI_API_BASE_URL=http://embedding-shim:8000/v1`, `RAG_EMBEDDING_MODEL=qwen3-embedding-8b`, `RAG_OPENAI_API_KEY` — тот же Bearer, что для MWS (`MWS_GPT_API_KEY`). Shim: `BGE_EMBEDDING_UPSTREAM=https://api.gpt.mws.ru` **или** только `MWS_GPT_API_BASE` в mws.local (без дубля `/v1/v1` в пути к `/embeddings`).
 - **Input:** PDF в чат (`Large_Language_Model-Based_Agents_for_Software_Eng.pdf` или аналог); запрос summary / ключевые пункты / анализ (RU/EN).
 - **Model(s) used:** чат — модель из UI (например `gpt-hub`); эмбеддинги — `qwen3-embedding-8b` через `embedding-shim` → MWS `POST /v1/embeddings`.
 - **Latency:** _не замеряли_
@@ -270,7 +270,7 @@
 ## 2026-04-11 20:13 — PPTX на Cloud VM (тайминги, артефакт, ingest)
 
 - **Stack commit:** `3e9aa55` (`97dbcaf36e8c4123dd940519cb331e3eea5352d7`)
-- **Env:** VM публичный `178.154.209.51`; `docker compose -f infra/docker-compose.yml --profile rag`; `.env` + `.env.mws.local`; orchestrator published **8089:8000**; `PPTX_ARTIFACTS_PUBLIC_BASE_URL=http://178.154.209.51:8089` (без trailing slash); контейнер `gpthub-prod-orchestrator` перезапущен ~20:12 UTC по логам.
+- **Env:** VM с публичным хостом **`<your-vm-host>`** (placeholder; реальный FQDN/IP — только в приватных заметках команды); стек как после **`make docker-up`** / compose с двумя `--env-file` и `--profile rag`; `.env` + `.env.mws.local`; orchestrator published **8089:8000**; `PPTX_ARTIFACTS_PUBLIC_BASE_URL=http://<your-vm-host>:8089` (без trailing slash); контейнер `gpthub-prod-orchestrator` перезапущен ~20:12 UTC по логам.
 - **Input:** Open WebUI — запрос на презентацию (~9 слайдов); второй запрос в той же сессии (продолжение диалога).
 - **Model(s) used:** видимая `gpt-hub`; router `gpt-hub-strong`, роль `reasoning_code_local`; `task_type` / classifier `pptx` (см. `execution_trace` / `X-GPTHub-Trace`).
 - **Latency:** первый полный цикл — `plan_total_ms` **54225** ms, `build_deck_ms` **205** ms; от `POST /api/chat/completions` до `POST /api/chat/completed` в WebUI **55000** ms (~55 s); второй PPTX подряд — `plan_total_ms` **12645** ms, `build_deck_ms` **232** ms.

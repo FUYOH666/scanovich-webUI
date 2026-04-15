@@ -49,7 +49,7 @@
 
 ## Что пересобирать при смене политики
 
-- Изменился только **`gpthub_orchestrator/data/model_roles.yaml`** (или код роутера/classifier): достаточно **`docker compose -f infra/docker-compose.yml up -d --build orchestrator`**.
+- Изменился только **`gpthub_orchestrator/data/model_roles.yaml`** (или код роутера/classifier): достаточно пересобрать **orchestrator** из **корня** репозитория — **`make docker-rebuild`** (внутри те же `--env-file .env` / `.env.mws.local`, что и у `make docker-up`; эквивалент: `docker compose --env-file .env --env-file .env.mws.local -f infra/docker-compose.yml up -d --build orchestrator`). Запуск compose не из корня или без обоих `--env-file` ломает подстановку `OPEN_WEBUI_IMAGE` и пути `env_file` в YAML.
 - Изменился **`infra/litellm/config.yaml`**: пересоздать сервис **`litellm`** (и при необходимости orchestrator).
 
 ## Где не искать эту политику

@@ -25,6 +25,7 @@
 
 ### Changed
 
+- **Приёмка / доки Docker:** единый канон (`make docker-up`, два `--env-file`, `--profile rag`, запуск из корня репо) выровнен в [`docs/NEW_CHAT_HANDOFF_RU.md`](docs/NEW_CHAT_HANDOFF_RU.md) §11, [`ROADMAP.md`](ROADMAP.md), [`docs/LIVE_SMOKE.md`](docs/LIVE_SMOKE.md) (преамбула журнала + правки шаблонов/записей), [`docs/MODEL_ROUTING_POLICY.md`](docs/MODEL_ROUTING_POLICY.md); публичный IP стенда в журнале заменён на placeholder `<your-vm-host>`. Комментарий в [`.env.example`](.env.example) про пересоздание WebUI — с теми же флагами compose. **Проверки:** `cd apps/orchestrator && uv sync --extra dev && uv run pytest -q` → **362 passed, 3 skipped**; `make help`; при наличии `.env` / `.env.mws.local` — `docker compose … --profile rag config` из корня (OK). `make demo` в этом прогоне не выполнялся (опционально по плану при поднятом стеке).
 - **`GPTHub_architecture_submission.pdf`:** только **текст** (ReportLab): кириллица,
   мета `MachineReadableMeta`, полный Mermaid из `architecture.mmd` и `user_flow.mmd`
   **без встроенных PNG** — схемы для конкурса как извлекаемый исходник. Ранее в PDF

@@ -74,7 +74,7 @@ Non-goals до самого конца:
 
 1. Остановить v3-стек: `docker rm -f gpthub-v3-orchestrator gpthub-v3-embedding-shim gpthub-v3-open-webui gpthub-v3-litellm`.
 2. Проверить `.env` и `.env.mws.local` (ключи на месте).
-3. `docker compose -f infra/docker-compose.yml up -d --build`.
+3. Из **корня** репозитория: **`make docker-up`** (канон: `docs/LOCAL_RUN_RU.md`; эквивалент — `docker compose --env-file .env --env-file .env.mws.local -f infra/docker-compose.yml --profile rag up -d --build`).
 4. Проверить `/healthz`, `/readyz`, `GET /v1/models` (orchestrator 8089, LiteLLM 4000, WebUI 3000).
 5. Три живых запроса через WebUI: текст, PDF + вопрос, «нарисуй кота».
 6. **Записать результаты в `docs/LIVE_SMOKE.md`** с таймингами.
@@ -152,7 +152,7 @@ WebUI admin подтверждает: Tavily ON, 2 results, basic depth.
    BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=true
    ```
    (без последней строки WebUI пытается векторизовать сниппеты без embedding engine.)
-2. Пересобрать только контейнер WebUI: `docker compose up -d --force-recreate open-webui`.
+2. Пересоздать только контейнер WebUI из **корня** репо: `docker compose --env-file .env --env-file .env.mws.local -f infra/docker-compose.yml --profile rag up -d --force-recreate open-webui` (те же флаги, что у `make docker-up`; не вызывать `docker compose` без `--env-file` из другого каталога).
 3. Проверить через WebUI: кнопка «web search» появилась, запрос возвращает
    результаты.
 4. Записать в `LIVE_SMOKE.md` и обновить row 7 в `FEATURE_MATRIX.md`.
@@ -285,7 +285,7 @@ wow» и «сохранить baseline» — всегда сохраняем bas
 Это **единственный** критерий «готовы к защите». Все пункты проверяемы.
 
 ### Runtime
-- `[ ]` `docker compose -f infra/docker-compose.yml up -d --build` без ручных действий
+- `[ ]` **`make docker-up`** из корня репо без обходных путей (см. `docs/LOCAL_RUN_RU.md`)
 - `[ ]` `curl localhost:8089/healthz` → 200
 - `[ ]` `curl localhost:8089/readyz` → 200
 - `[ ]` WebUI на `localhost:3000` показывает модель `gpt-hub`
@@ -321,7 +321,7 @@ wow» и «сохранить baseline» — всегда сохраняем bas
 
 Проект считается готовым к защите, если одновременно:
 
-- `docker compose up` на чистой машине даёт рабочий стек;
+- после `make bootstrap-env` и правок секретов **`make docker-up`** на чистой машине даёт рабочий стек (`docs/LOCAL_RUN_RU.md`);
 - все ряды 1–12 закрыты либо имеют честный статус в `FEATURE_MATRIX.md`;
 - demo-сценарий проигрывается без «магии за кадром»;
 - `X-GPTHub-Trace` показывает все решения orchestrator'а;
