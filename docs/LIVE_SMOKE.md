@@ -442,7 +442,18 @@
 
 - **Trace highlights:** шаг 7 — `classifier trace` / `detected_task` в превью лога; шаг 8 — council, в выводе скрипта: «check trace for 3 experts»; шаг 9 — inline `.pptx` + одноразовая ссылка скачивания:
   - `http://158.160.254.223:8089/artifacts/pptx/ef8860cc165c452180d994b3ba6b95f8?token=…` (токен одноразовый, не логировать в публичные отчёты повторно).
-- **Notes:** Сценарий закрывает тот же чеклист, что `demo.sh` / записи **2026-04-13** с `demo_benchmark.py`, с **другими** wall time (сеть/нагрузка MWS). Для переноса лога с ВМ без `scp` по hostname: `ресурсы/YandexCloud/Makefile` → `make fetch-scanovich-bench-txt` (через `yc compute ssh`). Журнал по правилам репо: `.cursor/rules/rules.md` → новые прогоны только в этом файле. Made-with: Cursor.
+- **Notes:** Сценарий закрывает тот же чеклист, что `demo.sh` / записи **2026-04-13** с `demo_benchmark.py`, с **другими** wall time (сеть/нагрузка MWS). Для переноса лога с ВМ без `scp` по hostname: `ресурсы/YandexCloud/Makefile` → `make fetch-scanovich-bench-txt` (через `yc compute ssh`). Журнал по правилам репо: `.cursor/rules/rules.md` → канонический журнал основного репо — `scanovich-webUI/docs/LIVE_SMOKE.md`; клон/task-repo дублирует прогоны здесь при локальной проверке. Made-with: Cursor.
+
+## 2026-04-15 — Локально (WSL): `make docker-reset` + полный `make demo` (PASS=13)
+
+- **Stack commit:** **`3c1577d`** (`main-usatov`, `playground/task-repo`: `Makefile` — ключ для `demo`/`demo-benchmark` сначала из `.env`; `main.py` — явный текст при неверном Bearer оркестратора; комментарий в `infra/docker-compose.yml` про `--env-file`).
+- **Env:** `playground/task-repo`; `.env` + `.env.mws.local`; `make docker-reset` (`DOCKER_COMPOSE_INFRA` с `--env-file` корневых env); Open WebUI: `OPEN_WEBUI_IMAGE=ghcr.io/usatovpavel/open-webui:feature-audio` (проверено `docker inspect gpthub-prod-open-webui`).
+- **Input:** `make demo` (тот же сценарий, что `scripts/demo.sh`: health, `/v1/models`, text chat, URL ingest, image gen, memory, classifier, council, PPTX).
+- **Model(s) used:** по шагам — фасад `gpt-hub` / алиасы LiteLLM (`gpt-hub-turbo`, council-ветки, PPTX и т.д.); см. `X-GPTHub-Trace` в выводе шагов 3/7/8.
+- **Latency:** не замеряли отдельно; прогон end-to-end зелёный за одну сессию терминала.
+- **Result:** **OK** — **PASS=13 FAIL=0 WARN=0**; сообщение скрипта: «Baseline is ready for a demo recording».
+- **Trace highlights:** council — «check trace for 3 experts»; PPTX — inline `.pptx`; Row 8 URL — OK; classifier trace на шаге 7.
+- **Notes:** Ранее `make demo` давал `Invalid API key` при рабочем `curl` с `read_env_key.py`: в shell был устаревший `export ORCHESTRATOR_API_KEY`, а Makefile брал env раньше `.env` — исправлено в `3c1577d`. Диагностика: прямой `curl` к `:4000/v1/models` и `:8089/v1/models` с тем же ключом. Правило канона журнала: `.cursor/rules/rules.md` § «Журнал live smoke». Made-with: Cursor.
 
 ---
 
