@@ -4,6 +4,12 @@
 
 ### Added
 
+- **Локальный запуск Docker:** [`docs/LOCAL_RUN_RU.md`](docs/LOCAL_RUN_RU.md) — RU-туториал
+  (два `--env-file`, профиль `rag`, health, `make demo`, типовые сбои) и **такс-лист**
+  перед приёмкой. В [`Makefile`](Makefile): цели **`docker-up`**, **`docker-down`**,
+  **`docker-pull`**. Синхронизированы [`docs/STUDY_PATH_RU.md`](docs/STUDY_PATH_RU.md)
+  (C1/C6), [`README.md`](README.md) (Quick Start + шаг «Later»), [`docs/NEW_CHAT_HANDOFF_RU.md`](docs/NEW_CHAT_HANDOFF_RU.md),
+  [`docs/submission/README.md`](docs/submission/README.md).
 - **AI-readable architecture:** [`docs/submission/ARCHITECTURE_FOR_AI.md`](docs/submission/ARCHITECTURE_FOR_AI.md)
   — Markdown + Mermaid + пересказы схем (дублирует смысл PDF для репозитория; сам
   PDF сдачи теперь тоже содержит извлекаемый Mermaid в приложениях). Упоминание

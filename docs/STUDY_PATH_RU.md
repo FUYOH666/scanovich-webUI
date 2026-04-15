@@ -31,15 +31,15 @@
 ## Фаза C — готовность к организаторам (hands-on)
 
 Выполнять по [`ROADMAP.md`](../ROADMAP.md) §0.4; результаты фиксировать в
-[`docs/LIVE_SMOKE.md`](LIVE_SMOKE.md).
+[`docs/LIVE_SMOKE.md`](LIVE_SMOKE.md). Полный туториал по Docker/ENV: [`docs/LOCAL_RUN_RU.md`](LOCAL_RUN_RU.md).
 
-- [ ] **C1** `docker compose -f infra/docker-compose.yml up -d --build` — стек healthy.
+- [ ] **C1** Поднять стек из **корня** репо с двумя env и профилем `rag`, например **`make docker-up`** (эквивалент: `docker compose --env-file .env --env-file .env.mws.local -f infra/docker-compose.yml --profile rag up -d --build`) — сервисы healthy.
 - [ ] **C2** `curl` health/ready/models (orchestrator 8089, LiteLLM 4000, WebUI 3000).
 - [ ] **C3** [`scripts/demo.sh`](../scripts/demo.sh) — ожидание `PASS=12 FAIL=0`, понять `WARN`.
 - [ ] **C4** Оператор: Row 2 голос, 4 `.wav`, 5 фото VLM, 7 Tavily (per-chat глобус), 11 ручная модель, 14 PPTX ссылка.
 - [ ] **C5** Обновить [`docs/LIVE_SMOKE.md`](LIVE_SMOKE.md) и xlsx:
   `uv run --with openpyxl python scripts/build_features_xlsx.py` из корня репо.
-- [ ] **C6** Сабмишен: [`docs/submission/README.md`](submission/README.md) — диаграммы PNG, слайды, видео, тег по ROADMAP.
+- [ ] **C6** Сабмишен: [`docs/submission/README.md`](submission/README.md) — PDF архитектуры (текст + Mermaid внутри PDF), xlsx матрицы, pptx/экспорт PDF слайдов; при необходимости PNG через `mmdc` для презентации; тег по ROADMAP.
 
 ## Тесты (верификация после синков)
 

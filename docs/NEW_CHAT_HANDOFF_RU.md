@@ -24,6 +24,10 @@
 стек `gpthub-v3-*` в docker — его нужно остановить, он конфликтует по
 портам `3000/4000/8089` и больше не используется.
 
+### 1.1 Локальный Docker (prod-стек)
+
+Канон: **корень репо**, два файла **`--env-file .env`** и **`--env-file .env.mws.local`**, compose **`infra/docker-compose.yml`**, профиль **`rag`**. Команды **`make docker-up`**, **`make docker-down`**, **`make docker-pull`** (см. [`Makefile`](../Makefile)). Пошаговый гайд и чек-лист: [`docs/LOCAL_RUN_RU.md`](LOCAL_RUN_RU.md).
+
 ## 2. Главная продуктовая идея
 
 Единый AI workspace в одном окне чата. Правила:

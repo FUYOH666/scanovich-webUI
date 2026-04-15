@@ -64,6 +64,8 @@ flowchart LR
 
 ## Quick Start
 
+**Полный пошаговый гайд (RU):** [`docs/LOCAL_RUN_RU.md`](docs/LOCAL_RUN_RU.md) — два env-файла, профиль `rag`, `make docker-up` / `docker-down`, чек-лист и типовые сбои.
+
 From the repo root, Compose must see **both** `.env` and `.env.mws.local` (paths in `infra/docker-compose.yml` are resolved from the repo root). The Makefile wires this with `--env-file` for each run.
 
 1. **Bootstrap** — create `.env` from `bootstrap.env.example`, `.env.mws.local` from `.env.mws.local.example`, and ensure a non-empty `OPEN_WEBUI_IMAGE` (see `make bootstrap-env` output). Use `BOOTSTRAP_FORCE=1` to overwrite existing env files.
@@ -82,11 +84,7 @@ From the repo root, Compose must see **both** `.env` and `.env.mws.local` (paths
 
    Or copy the one-liner printed at the end of `make bootstrap-env`.
 
-4. **Later** — recycle the stack without rebuilding images:
-
-   ```bash
-   make docker-reset
-   ```
+4. **Later** — быстрый перезапуск **без** пересборки образов: `make docker-reset` (это `docker-down` по сути + `up -d` без `--build`). После **смены кода** оркестратора: `make docker-rebuild` / `make docker-up` (с `--build`).
 
 If `ORCHESTRATOR_API_KEY` is set in your shell to an old value, it can override `.env` when running ad-hoc scripts; for `make demo` the Makefile reads the key from `.env` first. Use `unset ORCHESTRATOR_API_KEY` if in doubt.
 
@@ -188,7 +186,7 @@ Optional `rag` support is infrastructure for Open WebUI, not a second flagship p
 - `FEATURE_MATRIX.md` — матрица фич для xlsx сдачи
 - `docs/LIVE_SMOKE.md` — журнал прогонов через Docker-стек
 - `docs/STUDY_PATH_RU.md` — чеклист изучения репо (фазы A–C) + текст для сабмисона
-- `docs/submission/` — экспорт xlsx, **PDF архитектуры** (текст + Mermaid без PNG), **презентация** (`SLIDES_10_RU.md` → `GPTHub_defence_10slides.pptx` → PDF)
+- `docs/submission/` — экспорт xlsx, **PDF архитектуры** (текст + Mermaid без PNG), **презентация** (`SLIDES_10_RU.md` → `GPTHub_defence_10slides.pptx` → PDF); локальный стек — [`docs/LOCAL_RUN_RU.md`](docs/LOCAL_RUN_RU.md)
 - `docs/MWS_CATALOG.md` — каталог моделей MWS
 - `docs/PROMPT_PRECEDENCE.md`, `docs/WEBUI_PAYLOAD.md`
 - `scripts/demo.sh` — идемпотентный curl-smoke (Demo Lock)

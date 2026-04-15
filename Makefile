@@ -1,7 +1,7 @@
 # GPTHub Prod — runs scripts/demo.sh. Ключ: при наличии .env читаем из файла первым делом
 # (иначе устаревший export ORCHESTRATOR_API_KEY в shell ломал make demo при рабочем .env).
 
-.PHONY: help bootstrap-env demo demo-baseline demo-benchmark docker-rebuild docker-rebuild-rag docker-reset docker-logs-save docker-logs-filter-health pptx-bench-nature open-webui-up open-webui-down open-webui-image-up open-webui-image-down
+.PHONY: help bootstrap-env demo demo-baseline demo-benchmark docker-rebuild docker-rebuild-rag docker-up docker-pull docker-down docker-reset docker-logs-save docker-logs-filter-health pptx-bench-nature open-webui-up open-webui-down open-webui-image-up open-webui-image-down
 
 SHELL := /bin/bash
 
@@ -36,7 +36,11 @@ help:
 	@echo "  make demo-benchmark    - scripts/demo_benchmark.py (timed smoke)"
 	@echo "  make docker-rebuild     - docker compose build + up -d orchestrator (pick up code changes)"
 	@echo "  make docker-rebuild-rag  - same + embedding-shim (compose profile rag)"
-	@echo "  make docker-reset        - compose --profile rag down + up -d (uses infra/docker-compose.yml)"
+	@echo "  make docker-up           - поднять стек: --profile rag up -d --build (оба env из корня репо)"
+	@echo "  make docker-pull         - pull образов для того же стека (profile rag)"
+	@echo "  make docker-down         - остановить и удалить контейнеры стека (profile rag)"
+	@echo "  make docker-reset        - docker-down затем up -d БЕЗ --build (быстрый перезапуск)"
+	@echo "  Инфраструктурный compose: только из корня репо или через make — см. docs/LOCAL_RUN_RU.md"
 	@echo "  make docker-logs         - последние логи всех сервисов стека (LOG_TAIL=$(LOG_TAIL))"
 	@echo "  make docker-logs-follow  - поток логов (-f), Ctrl+C выход"
 	@echo "  make docker-logs-save    - записать логи в logs/compose-YYYYMMDD-HHMMSS.log"
@@ -144,6 +148,15 @@ demo-benchmark:
 	  export ORCHESTRATOR_API_KEY="$$key"; \
 	  [[ -n "$$ORCHESTRATOR_API_KEY" ]] || { echo "FATAL: ORCHESTRATOR_API_KEY empty — добавь в .env (ORCHESTRATOR_API_KEY или LITELLM_MASTER_KEY) или export в shell" >&2; exit 2; }; \
 	  exec python3 "$(CURDIR)/scripts/demo_benchmark.py"'
+
+docker-down:
+	$(DOCKER_COMPOSE_INFRA) --profile rag down
+
+docker-pull:
+	$(DOCKER_COMPOSE_INFRA) --profile rag pull
+
+docker-up:
+	$(DOCKER_COMPOSE_INFRA) --profile rag up -d --build
 
 docker-reset:
 	$(DOCKER_COMPOSE_INFRA) --profile rag down
