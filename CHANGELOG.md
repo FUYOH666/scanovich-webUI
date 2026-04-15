@@ -4,6 +4,10 @@
 
 ### Added
 
+- **AI-readable architecture:** [`docs/submission/ARCHITECTURE_FOR_AI.md`](docs/submission/ARCHITECTURE_FOR_AI.md)
+  — Markdown + Mermaid + текстовые пересказы схем (дополняет PDF сдачи: из PDF
+  кириллица часто плохо извлекается, схемы на стр. 2–3 — растр без семантики для
+  текстового парсера). Упоминание в [`ARCHITECTURE_SUBMISSION_RU.txt`](docs/submission/ARCHITECTURE_SUBMISSION_RU.txt).
 - **Defence deck (10 slides):** [`docs/submission/SLIDES_10_RU.md`](docs/submission/SLIDES_10_RU.md)
   (полный текст под критерии жюри 50/25/25), сборка
   [`scripts/build_defence_deck_pptx.py`](scripts/build_defence_deck_pptx.py) →

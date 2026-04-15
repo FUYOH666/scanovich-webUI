@@ -10,6 +10,7 @@
 - **`ARCHITECTURE_SUBMISSION_RU.txt`** — исходный текст (сценарии, модели, зависимости); вклеивается в PDF.
 - **`GPTHub_architecture_submission.pdf`** — **единственный файл для загрузки** (лимит «1 файл / до 10 МБ / `.pdf`»): страница 1 — текст, страницы 2–3 — схемы (контур сервисов + User Flow). Сборка:
   `uv run --with matplotlib --with pillow python scripts/build_submission_architecture_pdf.py`
+- **`ARCHITECTURE_FOR_AI.md`** — та же архитектура в **UTF-8 Markdown** + встроенные блоки **Mermaid** + текстовые пересказы схем: удобно для **ИИ/RAG-проверок** и индексации (из PDF текст часто извлекается плохо, диаграммы там — растр). Человеческая сдача по-прежнему через PDF, если форма требует только `.pdf`.
 - **`gpthub-architecture.excalidraw`** — Empty Excalidraw scene placeholder; copy shapes from `architecture.mmd` or import the Mermaid where your Excalidraw build supports it.
 - **`SLIDES_SKELETON.md`** — короткий англоязычный черновик (5–7 слайдов); полный сценарий на **10 слайдов (RU)** — [`SLIDES_10_RU.md`](SLIDES_10_RU.md).
 - **`GPTHub_defence_10slides.pptx`** — презентация для сдачи (ровно 10 слайдов: проблема, решение, архитектура, user flow, критерии жюри 50/25/25, доказательства). Сборка из корня репо:

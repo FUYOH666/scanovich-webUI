@@ -3,7 +3,8 @@ GPTHub Prod — краткая архитектура и User Flow (сопров
 
 Для загрузки в форму используйте один файл: GPTHub_architecture_submission.pdf
 (текст этой страницы + две схемы). Исходники схем: architecture.png, user_flow.png
-(из Mermaid .mmd).
+(из Mermaid .mmd). Для автоматической проверки ИИ см. UTF-8 Markdown
+ARCHITECTURE_FOR_AI.md (тот же смысл + Mermaid в тексте + пересказ схем).
 
 ---
 
