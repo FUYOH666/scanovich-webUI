@@ -11,7 +11,12 @@
 - **`GPTHub_architecture_submission.pdf`** — **единственный файл для загрузки** (лимит «1 файл / до 10 МБ / `.pdf`»): страница 1 — текст, страницы 2–3 — схемы (контур сервисов + User Flow). Сборка:
   `uv run --with matplotlib --with pillow python scripts/build_submission_architecture_pdf.py`
 - **`gpthub-architecture.excalidraw`** — Empty Excalidraw scene placeholder; copy shapes from `architecture.mmd` or import the Mermaid where your Excalidraw build supports it.
-- **`SLIDES_SKELETON.md`** — Outline for 5–7 defence slides.
+- **`SLIDES_SKELETON.md`** — короткий англоязычный черновик (5–7 слайдов); полный сценарий на **10 слайдов (RU)** — [`SLIDES_10_RU.md`](SLIDES_10_RU.md).
+- **`GPTHub_defence_10slides.pptx`** — презентация для сдачи (ровно 10 слайдов: проблема, решение, архитектура, user flow, критерии жюри 50/25/25, доказательства). Сборка из корня репо:
+  `uv run --with python-pptx --with pillow python scripts/build_defence_deck_pptx.py`  
+  Скрипт: [`scripts/build_defence_deck_pptx.py`](../../scripts/build_defence_deck_pptx.py). Рисунки подтягиваются из `architecture.png` и `user_flow.png` (см. выше `mmdc`).
+- **PDF для формы** (лимит организаторов: до 15 слайдов, до 20 МБ, формат `.pdf`): откройте сгенерированный `.pptx` в **Keynote**, **Microsoft PowerPoint** или **LibreOffice Impress** → **Экспорт / Сохранить как PDF**. Типичный размер файла — сотни килобайт — **1–2 порядка ниже** лимита 20 МБ.
+- **`docs/submission/assets/README.md`** — опциональные скриншоты (чат, `X-GPTHub-Trace`) для усиления слайдов 8–9; не коммитьте секреты.
 
 Краткий текст для поля «архитектура + сценарии + модели + внешние зависимости»
 (можно копировать в форму): см. конец [`docs/STUDY_PATH_RU.md`](../STUDY_PATH_RU.md) (раздел **«Текст для сабмисона»**).

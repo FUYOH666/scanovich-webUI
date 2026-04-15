@@ -1,5 +1,7 @@
 # Defence deck skeleton (5–7 slides)
 
+> Полный текст на **10 слайдов (RU)** и сборка PPTX: [`SLIDES_10_RU.md`](SLIDES_10_RU.md) и `scripts/build_defence_deck_pptx.py`. Ниже — короткий англоязычный черновик.
+
 1. **Problem** — One chat surface must cover text, files, media, and observability without a second product mode.
 2. **Architecture** — `Open WebUI → orchestrator → LiteLLM → MWS`; single spine; diagram from `architecture.mmd` / Excalidraw.
 3. **Mixed input** — One request: PDF/text/audio/URL/image paths through `ingest` into one upstream completion; policy in orchestrator.

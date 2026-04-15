@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Defence deck (10 slides):** [`docs/submission/SLIDES_10_RU.md`](docs/submission/SLIDES_10_RU.md)
+  (полный текст под критерии жюри 50/25/25), сборка
+  [`scripts/build_defence_deck_pptx.py`](scripts/build_defence_deck_pptx.py) →
+  [`docs/submission/GPTHub_defence_10slides.pptx`](docs/submission/GPTHub_defence_10slides.pptx);
+  экспорт в PDF — через Keynote/PowerPoint/LibreOffice (см.
+  [`docs/submission/README.md`](docs/submission/README.md)). Опциональные
+  скриншоты: [`docs/submission/assets/README.md`](docs/submission/assets/README.md).
+  Тест: `apps/orchestrator/tests/test_build_defence_deck_pptx.py`.
+
 ### Changed
 
 - **`GPTHub_features_matrix.xlsx`:** пересобран с русскими заголовками и колонками
