@@ -8,9 +8,9 @@
 - **`user_flow.mmd`** — Mermaid: User Flow по **одному чату** (sequence: сообщение → orchestrator → ветки short-circuit / default chat → ответ + `X-GPTHub-Trace`). Экспорт: `mmdc -i docs/submission/user_flow.mmd -o docs/submission/user_flow.png`
 - **`architecture.png`**, **`user_flow.png`** — промежуточный рендер из `.mmd` (нужны скрипту PDF).
 - **`ARCHITECTURE_SUBMISSION_RU.txt`** — исходный текст (сценарии, модели, зависимости); вклеивается в PDF.
-- **`GPTHub_architecture_submission.pdf`** — **единственный файл для загрузки** (лимит «1 файл / до 10 МБ / `.pdf`»): страница 1 — текст, страницы 2–3 — схемы (контур сервисов + User Flow). Сборка:
-  `uv run --with matplotlib --with pillow python scripts/build_submission_architecture_pdf.py`
-- **`ARCHITECTURE_FOR_AI.md`** — та же архитектура в **UTF-8 Markdown** + встроенные блоки **Mermaid** + текстовые пересказы схем: удобно для **ИИ/RAG-проверок** и индексации (из PDF текст часто извлекается плохо, диаграммы там — растр). Человеческая сдача по-прежнему через PDF, если форма требует только `.pdf`.
+- **`GPTHub_architecture_submission.pdf`** — **единственный файл для загрузки** (лимит «1 файл / до 10 МБ / `.pdf`»): стр. 1–2 — структурированный текст (сценарии, контур, user flow, модели, зависимости) с нормальным **извлекаемым** Unicode; далее — **PNG** двух схем (для людей и vision); в конце — **приложения** с полным текстом `architecture.mmd` и `user_flow.mmd` для ИИ-жюри без OCR. Сборка:
+  `uv run --with reportlab --with pillow python scripts/build_submission_architecture_pdf.py`
+- **`ARCHITECTURE_FOR_AI.md`** — дубль в Markdown для репозитория / второго канала; **для формы «1 файл»** достаточно обновлённого PDF (текст + рисунки + Mermaid в приложении извлекаются текстом).
 - **`gpthub-architecture.excalidraw`** — Empty Excalidraw scene placeholder; copy shapes from `architecture.mmd` or import the Mermaid where your Excalidraw build supports it.
 - **`SLIDES_SKELETON.md`** — короткий англоязычный черновик (5–7 слайдов); полный сценарий на **10 слайдов (RU)** — [`SLIDES_10_RU.md`](SLIDES_10_RU.md).
 - **`GPTHub_defence_10slides.pptx`** — презентация для сдачи (ровно 10 слайдов: проблема, решение, архитектура, user flow, критерии жюри 50/25/25, доказательства). Сборка из корня репо:

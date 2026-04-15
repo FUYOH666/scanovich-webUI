@@ -5,9 +5,9 @@
 ### Added
 
 - **AI-readable architecture:** [`docs/submission/ARCHITECTURE_FOR_AI.md`](docs/submission/ARCHITECTURE_FOR_AI.md)
-  — Markdown + Mermaid + текстовые пересказы схем (дополняет PDF сдачи: из PDF
-  кириллица часто плохо извлекается, схемы на стр. 2–3 — растр без семантики для
-  текстового парсера). Упоминание в [`ARCHITECTURE_SUBMISSION_RU.txt`](docs/submission/ARCHITECTURE_SUBMISSION_RU.txt).
+  — Markdown + Mermaid + пересказы схем (дублирует смысл PDF для репозитория; сам
+  PDF сдачи теперь тоже содержит извлекаемый Mermaid в приложениях). Упоминание
+  в [`ARCHITECTURE_SUBMISSION_RU.txt`](docs/submission/ARCHITECTURE_SUBMISSION_RU.txt).
 - **Defence deck (10 slides):** [`docs/submission/SLIDES_10_RU.md`](docs/submission/SLIDES_10_RU.md)
   (полный текст под критерии жюри 50/25/25), сборка
   [`scripts/build_defence_deck_pptx.py`](scripts/build_defence_deck_pptx.py) →
@@ -19,6 +19,12 @@
 
 ### Changed
 
+- **`GPTHub_architecture_submission.pdf`:** сборка через **ReportLab** (встраиваемая
+  кириллица + мета-строка для парсеров) вместо Matplotlib; добавлены страницы
+  **приложения** с полным текстом Mermaid из `architecture.mmd` и `user_flow.mmd`
+  для текстового извлечения ИИ-жюри. Расширён
+  [`ARCHITECTURE_SUBMISSION_RU.txt`](docs/submission/ARCHITECTURE_SUBMISSION_RU.txt).
+  Команда: `uv run --with reportlab --with pillow python scripts/build_submission_architecture_pdf.py`.
 - **`GPTHub_features_matrix.xlsx`:** пересобран с русскими заголовками и колонками
   «Категория», «Пояснение статуса (RU)», «Реализация в проекте (подробно, RU)»;
   добавлен лист «Справка» с расшифровкой кодов статуса. Скрипт
@@ -29,9 +35,9 @@
 ### Added
 
 - **Submission (один PDF):** [`docs/submission/GPTHub_architecture_submission.pdf`](docs/submission/GPTHub_architecture_submission.pdf)
-  — текст + две схемы (PNG из Mermaid); сборка
-  [`scripts/build_submission_architecture_pdf.py`](scripts/build_submission_architecture_pdf.py)
-  (`uv run --with matplotlib --with pillow`). Рендер диаграмм: `mmdc` (`@mermaid-js/mermaid-cli`).
+  — структурированный текст + две схемы PNG + приложения с исходниками Mermaid;
+  сборка [`scripts/build_submission_architecture_pdf.py`](scripts/build_submission_architecture_pdf.py)
+  (`uv run --with reportlab --with pillow`). Рендер диаграмм: `mmdc` (`@mermaid-js/mermaid-cli`).
 - **Onboarding:** [`docs/STUDY_PATH_RU.md`](docs/STUDY_PATH_RU.md) — фазы A–C
   (чтение канона, карта кода по матрице, hands-on чеклист организаторов) и
   готовый **текст для сабмисона** (архитектура / сценарии / модели / зависимости).

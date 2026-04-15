@@ -1,19 +1,37 @@
-GPTHub Prod — краткая архитектура и User Flow (сопроводительный текст)
-================================================================================
+# GPTHub Prod — архитектура, сценарии, модели, зависимости (текст для PDF)
 
-Для загрузки в форму используйте один файл: GPTHub_architecture_submission.pdf
-(текст этой страницы + две схемы). Исходники схем: architecture.png, user_flow.png
-(из Mermaid .mmd). Для автоматической проверки ИИ см. UTF-8 Markdown
-ARCHITECTURE_FOR_AI.md (тот же смысл + Mermaid в тексте + пересказ схем).
+Один файл для формы: GPTHub_architecture_submission.pdf (стр. 1–3 — для людей и vision; стр. 4+ — извлекаемый текст с исходниками Mermaid для ИИ-жюри). Исходники PNG: architecture.png, user_flow.png из .mmd.
 
----
+## Поддерживаемые сценарии (единый чат Open WebUI)
 
-Продукт: один чат в Open WebUI; сценарии (текст, файлы, картинка, аудио, URL, голос через STT/TTS UI, веб-поиск при включении, WOW: совет моделей, WOW: PPTX) идут в один OpenAI-совместимый запрос к orchestrator, без второго флагманского режима.
+- Текстовый диалог; голос (STT/TTS на стороне WebUI, далее тот же оркестратор).
+- Вложения: PDF, Office (DOCX/XLSX/PPTX и др. через markitdown), десятки текстовых форматов; картинка в сообщении (VLM); аудио с ASR; URL в тексте (fetch HTML, SSRF-защита, лимиты).
+- Веб-поиск (Tavily через WebUI при включении; сниппеты в запрос с bypass векторизации при необходимости).
+- Долгосрочная память (команды запомнить/забудь/список; retrieval в system-контекст).
+- Генерация изображений по интенту (MWS /v1/images/generations).
+- WOW: Expert Council (глубокое исследование, fan-out + один синтез); WOW: PPTX (план, python-pptx, ссылка на артефакт).
+- Наблюдаемость: заголовок X-GPTHub-Trace (маршрут, цепочка моделей, артефакты ingest).
 
-Контур сервисов: Open WebUI → orchestrator (FastAPI: ingest, classifier/router, memory, council, image-gen, PPTX, trace) → LiteLLM (алиасы) → MWS (upstream чат/VLM/doc/reasoning). Наблюдаемость: заголовок X-GPTHub-Trace.
+## Контур сервисов и моделей (кратко)
 
-Модели (см. infra/litellm/config.yaml, docs/MWS_CATALOG.md): baseline mws-gpt-alpha (gpt-hub-turbo), тяжёлый glm-4.6-357b (gpt-hub-strong), документный qwen2.5-72b-instruct (gpt-hub-doc), код/рассуждения qwen3-coder-480b-a35b (gpt-hub-reasoning-or), VLM-цепочка qwen3-vl-* / qwen2.5-vl* / cotype-pro-vl-32b, fallback gemma-3-27b-it; image-gen — qwen-image (MWS /v1/images/generations); ASR — whisper-medium; память — qwen3-embedding-8b; план PPTX — алиасы gpt-hub-pptx-* и др.
+Пользователь → Open WebUI → orchestrator (ingest, classifier/router, memory, council, image-gen, PPTX, trace) → LiteLLM (алиасы) → MWS (чат, VLM, документы, reasoning). ASR, image-gen, эмбеддинги памяти — отдельные вызовы в MWS. Опционально: Tavily и embedding shim из WebUI (пунктир на схеме).
 
-Внешние зависимости: MWS (API, .env / .env.mws.local); Docker Compose; SQLite для фактов памяти; опционально Tavily (WebUI web search, ENABLE_WEB_SEARCH, TAVILY_API_KEY, bypass эмбеддинга сниппетов); markitdown для DOCX/XLSX/PPTX ingest; опционально embedding shim (профиль rag). Без MWS основной чат не работает.
+## User Flow (кратко)
 
-Исходники диаграмм (Mermaid): docs/submission/architecture.mmd, docs/submission/user_flow.mmd. Рендер: mmdc (пакет @mermaid-js/mermaid-cli).
+Одно сообщение в треде → POST /v1/chat/completions (OpenAI-форма) → orchestrator: ingest/classify/route → ветка memory ИЛИ image ИЛИ pptx ИЛИ council ИЛИ обычный chat через LiteLLM → MWS → ответ пользователю + X-GPTHub-Trace. Все ветки остаются в одном продуктовом чате.
+
+## Модели и алиасы (см. infra/litellm/config.yaml, docs/MWS_CATALOG.md)
+
+- Базовый чат: mws-gpt-alpha (gpt-hub-turbo); тяжёлый: glm-4.6-357b (gpt-hub-strong); документы: qwen2.5-72b-instruct (gpt-hub-doc); код/рассуждения: qwen3-coder-480b-a35b (gpt-hub-reasoning-or).
+- VLM: цепочка gpt-hub-vision → vision-2 → vision-3 → vision-4 → fallback (qwen3-vl-*, qwen2.5-vl*, cotype-pro-vl-32b и др.).
+- Fallback текстовый: gemma-3-27b-it. Картинки: qwen-image. ASR: whisper-medium. Память (эмбеддинги): qwen3-embedding-8b. План PPTX: алиасы gpt-hub-pptx-* и др.
+
+## Внешние зависимости
+
+- Обязательно: MWS GPT API (base/key в .env / .env.mws.local); Docker Compose для Open WebUI + orchestrator + LiteLLM.
+- Локально для памяти: SQLite (факты). Без MWS основной чат не работает.
+- Опционально: Tavily (TAVILY_API_KEY, ENABLE_WEB_SEARCH, BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL при отсутствии embedding engine); markitdown (Office ingest); embedding-shim (профиль rag в compose).
+
+## Диаграммы
+
+Исходники Mermaid: docs/submission/architecture.mmd, docs/submission/user_flow.mmd. Рендер PNG: mmdc (@mermaid-js/mermaid-cli). Полный текст Mermaid продублирован на последних страницах PDF для машинного извлечения.
