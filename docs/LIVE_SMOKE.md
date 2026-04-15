@@ -418,7 +418,7 @@
 ## 2026-04-14 20:16 — `demo_benchmark.py` на YC VM (полный WOW, артефакт PPTX)
 
 - **Stack commit:** `1775e46` (локальный `scanovich-webUI`; на ВМ при прогоне мог быть соседний SHA — сверить `git rev-parse --short HEAD` в `~/scanovich-webUI`).
-- **Env:** стек `gpthub-prod-*` на ВМ; прогон из `~/scanovich-webUI`; ключи из `.env` (как для `demo.sh` / `make demo-benchmark`). Публичный UI: `http://158.160.254.223:3000/`; оркестратор для артефактов: `http://158.160.254.223:8089`. Исходник вывода: `ресурсы/YandexCloud/bench-20260414-201601.txt` (копия с сервера в дерево хакатона).
+- **Env:** стек `gpthub-prod-*` на ВМ; прогон из `~/scanovich-webUI`; ключи из `.env` (как для `demo.sh` / `make demo-benchmark`). Публичный UI: `http://<your-vm-host>:3000/`; оркестратор для артефактов: `http://<your-vm-host>:8089` (placeholder вместо реального FQDN/IP стенда). Исходник вывода: `ресурсы/YandexCloud/bench-20260414-201601.txt` (копия с сервера в дерево хакатона).
 - **Input:** `make demo-benchmark` **или** `python3 scripts/demo_benchmark.py` (полный сценарий, без `--skip-wow`; те же шаги, что `scripts/demo.sh`, с `time.perf_counter()` на HTTP).
 - **Model(s) used:** по шагам — каталог `gpt-hub*`, image `qwen-image`, council три эксперта + синтез `gpt-hub-strong`, PPTX цепочка плана (см. `X-GPTHub-Trace` на стенде).
 - **Latency:** см. таблицу; доминирует **Expert Council** (~96 s wall).
@@ -441,7 +441,7 @@
 | 9/9 | POST pptx | **9324.2** | OK |
 
 - **Trace highlights:** шаг 7 — `classifier trace` / `detected_task` в превью лога; шаг 8 — council, в выводе скрипта: «check trace for 3 experts»; шаг 9 — inline `.pptx` + одноразовая ссылка скачивания:
-  - `http://158.160.254.223:8089/artifacts/pptx/ef8860cc165c452180d994b3ba6b95f8?token=…` (токен одноразовый, не логировать в публичные отчёты повторно).
+  - `http://<your-vm-host>:8089/artifacts/pptx/ef8860cc165c452180d994b3ba6b95f8?token=…` (токен одноразовый, не логировать в публичные отчёты повторно).
 - **Notes:** Сценарий закрывает тот же чеклист, что `demo.sh` / записи **2026-04-13** с `demo_benchmark.py`, с **другими** wall time (сеть/нагрузка MWS). Для переноса лога с ВМ без `scp` по hostname: `ресурсы/YandexCloud/Makefile` → `make fetch-scanovich-bench-txt` (через `yc compute ssh`). Журнал по правилам репо: `.cursor/rules/rules.md` → канонический журнал основного репо — `scanovich-webUI/docs/LIVE_SMOKE.md`; клон/task-repo дублирует прогоны здесь при локальной проверке. Made-with: Cursor.
 
 ## 2026-04-15 — Локально (WSL): `make docker-reset` + полный `make demo` (PASS=13)
