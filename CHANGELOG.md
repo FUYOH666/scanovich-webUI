@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Open WebUI web search prod default:** `.env.example` documents and defaults
+  **`BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=true`** so Tavily results are not
+  routed through WebUI vector embedding when no embedding engine is configured
+  (avoids `NoneType.encode`). `FEATURE_MATRIX.md` row 7, `docs/LIVE_SMOKE.md`,
+  `docs/NEW_CHAT_HANDOFF_RU.md` aligned; follow-up notes UX of the Sources panel
+  when bypass is on.
+- **PPTX plan model benchmark:** LiteLLM aliases `gpt-hub-pptx-llama33` →
+  `llama-3.3-70b-instruct` and `gpt-hub-pptx-qwen235a22` →
+  `Qwen3-235B-A22B-Instruct-2507-FP8` in [`infra/litellm/config.yaml`](infra/litellm/config.yaml);
+  script [`scripts/bench_pptx_plan_models.py`](scripts/bench_pptx_plan_models.py) runs the same
+  `request_slide_plan` + `build_pptx_from_plan` path as production, reports median
+  plan/build seconds per alias. Optional prod switch: `PPTX_PLAN_MODEL` env
+  (default remains `gpt-hub-strong`).
+- **Unit:** `tests/test_litellm_pptx_bench_aliases.py` asserts new YAML entries exist.
+
 ### Changed
 
 - **Docs (PPTX / test count):** `FEATURE_MATRIX.md` row 14 → **Implemented (WOW-3)**
@@ -10,10 +27,29 @@
   `README.md`, `ROADMAP.md` (§0.2 row 14, §0.3 scope, шаг 7, §0.6, Demo Lock, трек A),
   `docs/TEAM_BRIEF_RU.md`, `docs/NEW_CHAT_HANDOFF_RU.md`, `docs/LIVE_SMOKE.md`
   (устаревшие формулировки data-URI / «PPTX не реализован») — приведены к текущему коду.
-  Базовый счётчик на ветке с PPTX-пакетом: **226** тестов (`uv run pytest`);
-  после cherry-pick markitdown (`fa1d548`) смотри `uv run pytest` (в том коммите
-  заявлялось **255**).
+  Базовый счётчик: **226+** тестов (`uv run pytest`); на других снимках ветки встречались **255** / **261** — ориентиром остаётся вывод pytest на вашей машине.
   Пересобран `docs/submission/GPTHub_features_matrix.xlsx` из матрицы.
+- **Docs:** канон [`docs/MODEL_ROUTING_POLICY.md`](docs/MODEL_ROUTING_POLICY.md)
+  — baseline и политика ролей; **фактический** реестр —
+  `gpthub_orchestrator/data/model_roles.yaml` (`version: 1`, цепочки как в файле).
+- **Docs (web search UX):** `ARCHITECTURE.md`, `FEATURE_MATRIX.md` row 7,
+  `docs/LIVE_SMOKE.md` — поведение «счётчик источников / источники не найдены» при
+  `BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL`: поиск встраивается в ответ, панель цитат WebUI может расходиться с телом сообщения.
+- **PPTX JSON parsing:** устойчивость к prose после валидного top-level JSON
+  (`json.JSONDecoder().raw_decode`) в плане слайдов — см. `pptx/parse.py` и связанные пути;
+  упрощает бенчмарки и «болтливые» instruct-модели.
+- **Docs drift fix:** Row 9 memory — актуальное число тестов см. `test_memory_*.py` и `uv run pytest`;
+  `LIVE_SMOKE.md` — ReadTimeout на MWS embeddings; `.env.example` —
+  `MEMORY_EMBEDDING_TIMEOUT_SECONDS` в блоке Embeddings.
+- **Verification (снимок 2026-04-11):** на одном стенде `uv run pytest` → 261 passed, 2 skipped;
+  `demo.sh` → **PASS=13** FAIL=0 WARN=0 — см. `docs/LIVE_SMOKE.md` (число шагов `demo.sh` может отличаться от **PASS=12** в более ранних журналах).
+
+### Fixed
+
+- **PPTX plan JSON / MWS CoT:** где ответ модели содержит `<think>…`
+  до JSON, очистка перед парсингом (в т.ч. `pptx_gen.py` для альтернативных путей);
+  расширены паттерны intent («в формате pptx», «формат pptx»). Live-прогоны —
+  `docs/LIVE_SMOKE.md`.
 
 ### Added
 

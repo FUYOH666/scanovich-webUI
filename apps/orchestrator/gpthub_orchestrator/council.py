@@ -31,6 +31,7 @@ import logging
 import re
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -105,6 +106,56 @@ _RESEARCH_PHRASES = [
         re.IGNORECASE,
     ),
 ]
+
+# Open WebUI sends these as the last ``user`` message to the configured OpenAI base URL
+# (same as user chat). They embed ``<chat_history>`` which may contain ``/research`` or
+# research phrases and would false-trigger Expert Council if matched naïvely.
+# v0.8.12: ``generate_queries`` (middleware) and follow-up suggestion task.
+_RE_WEBUI_GENERATE_QUERIES_TASK = re.compile(
+    r"### Task:\s*\r?\n\s*Analyze the chat history to determine the necessity of generating search queries",
+    re.IGNORECASE,
+)
+_RE_WEBUI_FOLLOW_UP_SUGGESTIONS = re.compile(
+    r"Suggest 3[\-–]5 relevant follow-up questions",
+    re.IGNORECASE,
+)
+# task.title / task.tags / task.image.prompt / task.autocomplete (Open WebUI defaults, v0.8.x).
+_RE_WEBUI_TITLE_GENERATION = re.compile(
+    r"Generate a concise, 3[\-–]5 word title with an emoji summarizing the chat history",
+    re.IGNORECASE,
+)
+_RE_WEBUI_TAGS_GENERATION = re.compile(
+    r"Generate 1[\-–]3 broad tags categorizing the main themes of the chat history",
+    re.IGNORECASE,
+)
+_RE_WEBUI_IMAGE_PROMPT_FOR_GEN = re.compile(
+    r"Generate a detailed prompt for (?:an|am) image generation task",
+    re.IGNORECASE,
+)
+_RE_WEBUI_AUTOCOMPLETE_TASK = re.compile(
+    r"You are an autocompletion system\.\s*Continue the text",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def is_open_webui_internal_completion_user_text(text: str) -> bool:
+    """True if ``text`` is a known Open WebUI synthetic user prompt (not real user intent)."""
+    if not text or not text.strip():
+        return False
+    s = text.strip()
+    if _RE_WEBUI_GENERATE_QUERIES_TASK.search(s):
+        return True
+    if _RE_WEBUI_FOLLOW_UP_SUGGESTIONS.search(s):
+        return True
+    if _RE_WEBUI_TITLE_GENERATION.search(s):
+        return True
+    if _RE_WEBUI_TAGS_GENERATION.search(s):
+        return True
+    if _RE_WEBUI_IMAGE_PROMPT_FOR_GEN.search(s):
+        return True
+    if _RE_WEBUI_AUTOCOMPLETE_TASK.search(s):
+        return True
+    return False
 
 
 def is_council_request(text: str) -> bool:
@@ -401,6 +452,10 @@ async def _run_expert(
     )
 
 
+# (phase, experts_ready, experts_total); phase: experts | synthesis | synthesis_fallback.
+CouncilProgressFn = Callable[[str, int, int], Awaitable[None]]
+
+
 async def run_council(
     http: httpx.AsyncClient,
     *,
@@ -409,6 +464,7 @@ async def run_council(
     auth_header: str,
     question: str,
     experts: list[ExpertSpec] | None = None,
+    progress: CouncilProgressFn | None = None,
 ) -> CouncilResult:
     """Run the Expert Council fan-out + synthesis.
 
@@ -421,10 +477,18 @@ async def run_council(
         raise ValueError("question must be non-empty")
     experts = experts or default_experts(settings)
     total_start = time.monotonic()
+    n_experts = len(experts)
 
-    tasks = [
-        asyncio.create_task(
-            _run_expert(
+    if progress is not None:
+        await progress("experts", 0, n_experts)
+
+    lock: asyncio.Lock | None = asyncio.Lock() if progress is not None else None
+    expert_done = 0
+
+    async def _expert_task(spec: ExpertSpec) -> ExpertOpinion | BaseException:
+        nonlocal expert_done
+        try:
+            return await _run_expert(
                 http,
                 base_url=base_url,
                 auth_header=auth_header,
@@ -432,12 +496,17 @@ async def run_council(
                 question=question,
                 max_tokens=settings.council_max_expert_tokens,
                 timeout_seconds=settings.council_branch_timeout_seconds,
-            ),
-            name=f"council_expert_{spec.key}",
-        )
-        for spec in experts
-    ]
-    raw = await asyncio.gather(*tasks, return_exceptions=True)
+            )
+        except Exception as e:
+            return e
+        finally:
+            if progress is not None and lock is not None:
+                async with lock:
+                    expert_done += 1
+                    await progress("experts", expert_done, n_experts)
+
+    tasks = [asyncio.create_task(_expert_task(spec), name=f"council_expert_{spec.key}") for spec in experts]
+    raw = await asyncio.gather(*tasks)
 
     opinions: list[ExpertOpinion] = []
     failures: list[ExpertFailure] = []
@@ -471,6 +540,8 @@ async def run_council(
             len(opinions),
             settings.council_min_branches_for_synthesis,
         )
+        if progress is not None:
+            await progress("synthesis_fallback", len(opinions), n_experts)
         try:
             fallback_text = await _call_litellm_chat(
                 http,
@@ -507,6 +578,8 @@ async def run_council(
 
     # Synthesis pass.
     synthesis_raw: str | None = None
+    if progress is not None:
+        await progress("synthesis", len(opinions), n_experts)
     try:
         synthesis_raw = await _call_litellm_chat(
             http,

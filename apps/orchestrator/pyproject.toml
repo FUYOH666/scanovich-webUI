@@ -32,3 +32,6 @@ packages = ["gpthub_orchestrator"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "bench: optional live LLM / long-running checks (gate with env, e.g. PPTX_BENCH=1)",
+]

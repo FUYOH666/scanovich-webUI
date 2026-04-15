@@ -39,7 +39,9 @@ def markdown_preview_with_download_link(
 
 
 def pptx_download_filename(plan: SlidePlan) -> str:
-    t = (plan.slides[0].title if plan.slides else "") or "presentation"
+    t = (plan.presentation_title or "").strip()
+    if not t:
+        t = (plan.slides[0].title if plan.slides else "") or "presentation"
     safe = "".join(c if c.isalnum() or c in " -_" else "_" for c in t.strip())[:80] or "presentation"
     return f"{safe.strip()}.pptx"
 

@@ -10,6 +10,7 @@ from typing import Any
 
 import httpx
 
+from gpthub_orchestrator.classifier import RU_IMPERATIVE_CREATE_VERBS
 from gpthub_orchestrator.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 # Strong triggers: these regexes decide whether to short-circuit chat into image gen.
 # Must match Russian + English imperative verbs with an image noun nearby.
 _IMAGE_NOUNS_RU = r"(?:картинк\w*|изображен\w*|арт|постер|иллюстрац\w*|логотип\w*|обо\w*|иконк\w*|рисун\w*|фото\w*)"
-_IMAGE_VERBS_RU = r"(?:нарису\w*|сгенерир\w*|сделай|создай|придумай|покажи)"
+_IMAGE_VERBS_RU = rf"(?:нарису\w*|сгенерир\w*|придумай|покажи|{RU_IMPERATIVE_CREATE_VERBS})"
 _IMAGE_NOUNS_EN = r"(?:image|picture|photo|poster|illustration|logo|wallpaper|icon|artwork|drawing)"
 _IMAGE_VERBS_EN = r"(?:draw|generate|create|make|design|render|produce)"
 
@@ -26,11 +27,17 @@ _IMAGE_INTENT_PATTERNS = [
     # Russian: verb + noun (or vice versa) within same sentence.
     re.compile(rf"\b{_IMAGE_VERBS_RU}\b[^.?!\n]{{0,60}}\b{_IMAGE_NOUNS_RU}\b", re.IGNORECASE | re.UNICODE),
     re.compile(rf"\b{_IMAGE_NOUNS_RU}\b[^.?!\n]{{0,60}}\b{_IMAGE_VERBS_RU}\b", re.IGNORECASE | re.UNICODE),
+    re.compile(
+        rf"\b{_IMAGE_NOUNS_RU}\b[^.?!\n]{{0,60}}\b(?:хочу|хотим|хотите|хочет)\b",
+        re.IGNORECASE | re.UNICODE,
+    ),
     # Russian: "нарисуй <что угодно>" — standalone imperative (нарисовать/сгенерировать
     # без существительного в русском почти всегда означает картинку).
     re.compile(r"\b(?:нарису\w*|нарисовать|сгенерир\w*\s+картин\w*)\b", re.IGNORECASE | re.UNICODE),
     # English: verb + noun.
     re.compile(rf"\b{_IMAGE_VERBS_EN}\s+(?:an?\s+|me\s+an?\s+|a\s+|the\s+)?{_IMAGE_NOUNS_EN}\b", re.IGNORECASE),
+    # English: noun + verb (same window as RU).
+    re.compile(rf"\b{_IMAGE_NOUNS_EN}\b[^.?!\n]{{0,60}}\b{_IMAGE_VERBS_EN}\b", re.IGNORECASE),
     # English: strong standalone verbs that almost always mean image generation.
     re.compile(r"\b(?:draw|sketch|paint|illustrate|render)\b", re.IGNORECASE),
     # Slash command.

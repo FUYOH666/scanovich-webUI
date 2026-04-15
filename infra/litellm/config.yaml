@@ -62,6 +62,19 @@ model_list:
       api_base: os.environ/MWS_GPT_API_BASE
       api_key: os.environ/MWS_GPT_API_KEY
 
+  # Optional PPTX plan benchmarks (same MWS OpenAI-compatible host).
+  - model_name: gpt-hub-pptx-llama33
+    litellm_params:
+      model: openai/llama-3.3-70b-instruct
+      api_base: os.environ/MWS_GPT_API_BASE
+      api_key: os.environ/MWS_GPT_API_KEY
+
+  - model_name: gpt-hub-pptx-qwen235a22
+    litellm_params:
+      model: openai/Qwen3-235B-A22B-Instruct-2507-FP8
+      api_base: os.environ/MWS_GPT_API_BASE
+      api_key: os.environ/MWS_GPT_API_KEY
+
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
 
@@ -78,3 +91,5 @@ litellm_settings:
     - gpt-hub-vision-2: [gpt-hub-vision-3, gpt-hub-vision-4, gpt-hub-fallback]
     - gpt-hub-vision-3: [gpt-hub-vision-4, gpt-hub-fallback]
     - gpt-hub-vision-4: [gpt-hub-fallback]
+    - gpt-hub-pptx-llama33: [gpt-hub-fallback]
+    - gpt-hub-pptx-qwen235a22: [gpt-hub-fallback]

@@ -15,12 +15,21 @@ That path is the product. Everything else in the repo is supporting infrastructu
 - User-facing chat surface.
 - Sends OpenAI-compatible requests to the orchestrator.
 - Can optionally use the embedding shim when the `rag` profile is enabled.
+- **Web search (Tavily)** runs inside WebUI before the chat request is sent
+  upstream: snippets are merged into the outgoing messages. The
+  orchestrator does not call Tavily; it only sees the enriched payload.
+  With **`BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=true`** (repo default),
+  WebUI skips indexing those snippets into its vector DB. The model can
+  still answer from inlined search text while the **Sources** side panel
+  may show an empty or inconsistent state, because that UI often expects
+  structured retrieval metadata from the skipped path.
 
 ### Orchestrator
 
 - Owns the runtime policy layer.
 - Exposes `/healthz`, `/readyz`, `GET /v1/models`, and `POST /v1/chat/completions`.
 - Classifies requests, merges prompt policy, injects mixed-input artifacts, and emits `X-GPTHub-Trace`.
+- Role → LiteLLM alias order is defined in `apps/orchestrator/gpthub_orchestrator/data/model_roles.yaml`; human-readable policy (baseline vs current) lives in `docs/MODEL_ROUTING_POLICY.md`.
 
 ### LiteLLM
 

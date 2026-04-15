@@ -56,6 +56,7 @@ async def test_non_stream_retries_on_429_then_200():
                 auto_route_model=True,
                 orchestrator_litellm_fallback=True,
                 orchestrator_fallback_max_attempts=4,
+                classifier_semantic_enabled=False,
             )
             app.state.http = mock_inner
             r = await ac.post(

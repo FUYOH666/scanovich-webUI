@@ -31,6 +31,23 @@ from gpthub_orchestrator.pptx.schema import ALLOWED_SLIDE_KINDS, PptxGenError, S
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_PPTX_COMPLETION_MAX = 8192
+_OUTLINE_COMPLETION_MAX = 2048
+_SLIDE_AGENT_COMPLETION_MAX = 3072
+# Guidance for prompts only — no validation or retries on length.
+_PPTX_PROMPT_SOFT_MIN_VISIBLE_CHARS = 250
+
+
+def _pptx_slide_number(*, plan_slide_index: int, settings: Settings) -> int:
+    """1-based slide number in the exported .pptx for this plan row.
+
+    When ``pptx_intro_slide_enabled``, the template intro is slide 1; the first
+    planned content slide is slide 2.
+    """
+    intro = 1 if settings.pptx_intro_slide_enabled else 0
+    return plan_slide_index + 1 + intro
+
+
 _DENSITY_RULES = """How to write bullets for the chosen text density (each array entry is one bullet):
 - minimal: 1–2 short phrases per bullet, no fluff.
 - concise: 2–3 short sentences (or tight phrases) per bullet.
@@ -43,7 +60,7 @@ def _pptx_plan_system_prompt(settings: Settings) -> str:
     tc = settings.pptx_plan_text_content
     return f"""You output ONLY valid JSON for a slide deck plan. No markdown fences, no commentary before or after.
 Schema exactly:
-{{"slides":[{{"title":"string","bullets":["string"],"notes":"string","kind":"string or omit"}}]}}
+{{"presentation_title":"string","slides":[{{"title":"string","bullets":["string"],"notes":"string","kind":"string or omit"}}]}}
 
 Presentation context (adapt language; the user conversation defines topic and can override style):
 - Tone: {settings.pptx_plan_tone}
@@ -58,9 +75,11 @@ Optional "kind" per slide — semantic layout intent; pick one string that fits 
 Omit "kind" or use null if unsure. The deck builder may still use a simple template; "kind" guides structure and ordering of ideas.
 
 Rules:
+- Required top-level "presentation_title": one non-empty line — overall deck / talk title for the title slide only. Use a broad topic; each slide "title" must be a section heading and must not duplicate presentation_title (e.g. title "GPTHub", first slide "Проблема").
 - 1–{settings.pptx_max_slides} slides.
 - title: short heading.
 - bullets: 0–8 strings per slide; follow the text density level above.
+- Aim for ≥{_PPTX_PROMPT_SOFT_MIN_VISIBLE_CHARS} characters of on-slide text per slide (title + all bullet strings combined; notes excluded), when the topic allows — substantive but not padded.
 - notes: optional speaker notes (use "" if none).
 - Escape any double quotes inside strings properly."""
 
@@ -69,7 +88,7 @@ def _pptx_outline_system_prompt(settings: Settings) -> str:
     kinds = ", ".join(sorted(ALLOWED_SLIDE_KINDS))
     return f"""You output ONLY valid JSON — deck outline (slide titles only). No markdown fences, no commentary.
 Schema exactly:
-{{"slides":[{{"title":"string","kind":"string or omit"}}]}}
+{{"presentation_title":"string","slides":[{{"title":"string","kind":"string or omit"}}]}}
 
 Presentation context:
 - Tone: {settings.pptx_plan_tone}
@@ -81,6 +100,7 @@ Optional "kind" per slide — pick one that fits from:
 Omit "kind" if unsure.
 
 Rules:
+- Required top-level "presentation_title": non-empty overall deck title for the title slide (broad topic). Each slide "title" is a section heading and must differ from presentation_title (e.g. presentation_title "Обзор GPTHub", first slide "Проблема").
 - 1–{settings.pptx_max_slides} slides.
 - Each item has only "title" and optionally "kind".
 - Do not include "bullets" or "notes".
@@ -108,22 +128,29 @@ Optional "kind" from:
 Rules:
 - The JSON "title" must match the assigned slide title exactly (same language and wording).
 - bullets: 0–8 strings; follow the density level.
+- Aim for ≥{_PPTX_PROMPT_SOFT_MIN_VISIBLE_CHARS} characters of on-slide text (title + bullets combined) when the topic allows; stay substantive, not padded.
 - Prefer on-slide text (title + bullets) ≤ {SLIDE_AGENT_MAX_VISIBLE_CHARS} characters; the server truncates excess bullets/text if needed.
 - notes: speaker notes (not counted toward the on-slide cap); keep brief or use "".
 - Escape any double quotes inside strings properly."""
 
 
-_RETRY_USER = (
-    "Your previous answer was not usable. Reply with ONLY one JSON object matching the schema "
-    '{"slides":[{"title":"...","bullets":["..."],"notes":"...","kind":null or one allowed kind}]} '
-    "— no markdown, no prose."
-)
+def _retry_monolith_user() -> str:
+    soft = _PPTX_PROMPT_SOFT_MIN_VISIBLE_CHARS
+    return (
+        "Your previous answer was not usable. Reply with ONLY one JSON object matching the schema "
+        '{"presentation_title":"non-empty string","slides":[{"title":"...","bullets":["..."],"notes":"...","kind":null or one allowed kind}]} '
+        f"— no markdown, no prose. Per slide, aim for ≥{soft} characters title+bullets combined when appropriate."
+    )
 
-_RETRY_SLIDE_USER = (
-    "Your previous answer was not usable. Reply with ONLY one JSON object for this single slide: "
-    '{"title":"...","bullets":["..."],"notes":"...","kind":null or allowed kind} — no markdown, no prose. '
-    f"title + bullets combined should stay ≤ {SLIDE_AGENT_MAX_VISIBLE_CHARS} characters (excess is truncated)."
-)
+
+def _retry_slide_user() -> str:
+    cap = SLIDE_AGENT_MAX_VISIBLE_CHARS
+    soft = _PPTX_PROMPT_SOFT_MIN_VISIBLE_CHARS
+    return (
+        "Your previous answer was not usable. Reply with ONLY one JSON object for this single slide: "
+        '{"title":"...","bullets":["..."],"notes":"...","kind":null or allowed kind} — no markdown, no prose. '
+        f"Aim for ≥{soft} characters title+bullets when appropriate; hard cap ≤{cap} (excess is truncated)."
+    )
 
 
 def _log_pptx_timing(payload: dict[str, Any]) -> None:
@@ -132,8 +159,8 @@ def _log_pptx_timing(payload: dict[str, Any]) -> None:
 
 def _log_pptx_slide_agent_done(
     *,
-    idx: int,
-    total: int,
+    pptx_slide_number: int,
+    plan_slides_total: int,
     spec: SlideSpec,
     ms: float | None,
     mode: str,
@@ -141,8 +168,8 @@ def _log_pptx_slide_agent_done(
     payload: dict[str, Any] = {
         "phase": "pptx_slide_agent_done",
         "mode": mode,
-        "idx": idx,
-        "total": total,
+        "pptx_slide_number": pptx_slide_number,
+        "plan_slides_total": plan_slides_total,
         "title": spec.title,
         "kind": spec.kind,
         "bullets": spec.bullets,
@@ -153,16 +180,25 @@ def _log_pptx_slide_agent_done(
     logger.info("pptx_timing %s", json.dumps(payload, ensure_ascii=False))
 
 
-def _finalize_monolithic_plan(plan: SlidePlan) -> SlidePlan:
+def _finalize_monolithic_plan(plan: SlidePlan, settings: Settings) -> SlidePlan:
+    n = len(plan.slides)
     for i, spec in enumerate(plan.slides):
         _log_pptx_slide_agent_done(
-            idx=i,
-            total=len(plan.slides),
+            pptx_slide_number=_pptx_slide_number(plan_slide_index=i, settings=settings),
+            plan_slides_total=n,
             spec=spec,
             ms=None,
             mode="monolithic",
         )
     return plan
+
+
+def _monolith_plan_from_raw(raw: str, settings: Settings) -> SlidePlan | None:
+    try:
+        plan = parse_slide_plan_text(raw)
+    except (ValueError, json.JSONDecodeError):
+        return None
+    return _finalize_monolithic_plan(plan, settings)
 
 
 def _retryable_litellm_status(status_code: int) -> bool:
@@ -226,11 +262,12 @@ async def _post_chat(
     max_tokens: int | None = None,
 ) -> dict[str, Any]:
     url = f"{settings.litellm_base_url.rstrip('/')}/v1/chat/completions"
+    mt = _DEFAULT_PPTX_COMPLETION_MAX if max_tokens is None else max_tokens
     body: dict[str, Any] = {
         "model": model,
         "messages": messages,
         "temperature": 0.25,
-        "max_tokens": 8192 if max_tokens is None else max_tokens,
+        "max_tokens": mt,
     }
     merge_reasoning_exclude_into_body(
         body,
@@ -308,7 +345,7 @@ def _router_chain_auth_excerpt(
     authorization: str | None,
 ) -> tuple[list[str], str, str]:
     classification = classify_messages(messages)
-    if classification.get("task_type") != "pptx":
+    if classification.get("task_type") not in ("pptx", "pptx_generation"):
         logger.info("pptx_plan_task_mismatch got=%s", classification.get("task_type"))
 
     router = choose_model(classification, settings)
@@ -337,8 +374,9 @@ def _slide_agent_user_block(
         f"Write content for slide {slide_index + 1} of {total_slides} only.\n"
         f'Assigned title (JSON "title" must match this exactly): {title}\n'
         f"Outline kind hint: {kh}\n\n"
-        f"Target ≤{SLIDE_AGENT_MAX_VISIBLE_CHARS} characters for title + bullets on this slide "
-        "(notes separate; overflow is truncated server-side).\n\n"
+        f"Aim for ≥{_PPTX_PROMPT_SOFT_MIN_VISIBLE_CHARS} characters for title + bullets on this slide when the topic allows "
+        f"(notes separate). Hard cap ≤{SLIDE_AGENT_MAX_VISIBLE_CHARS} characters for title + bullets "
+        "(overflow is truncated server-side).\n\n"
         "Return one JSON object for this slide only."
     )
 
@@ -375,35 +413,36 @@ async def _request_slide_plan_monolithic(
             "ms": round((time.perf_counter() - t_llm) * 1000, 1),
         }
     )
-    try:
-        return _finalize_monolithic_plan(parse_slide_plan_text(raw))
-    except (ValueError, json.JSONDecodeError) as e:
-        logger.info("pptx_plan_parse_retry err=%s", e)
-        retry_msgs: list[dict[str, str]] = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": base_user},
-            {"role": "assistant", "content": raw[:6000]},
-            {"role": "user", "content": _RETRY_USER},
-        ]
-        t_retry = time.perf_counter()
-        raw2 = await _complete_plan_raw(
-            http,
-            settings,
-            chain=chain,
-            auth_header=auth,
-            messages=retry_msgs,
-        )
-        _log_pptx_timing(
-            {
-                "phase": "plan_monolithic_llm_retry_ms",
-                "ms": round((time.perf_counter() - t_retry) * 1000, 1),
-            }
-        )
-        try:
-            return _finalize_monolithic_plan(parse_slide_plan_text(raw2))
-        except (ValueError, json.JSONDecodeError) as e2:
-            logger.warning("pptx_plan_parse_failed err=%s", e2)
-            raise PptxGenError("slide_plan_json_invalid") from e2
+    plan = _monolith_plan_from_raw(raw, settings)
+    if plan is not None:
+        return plan
+
+    logger.info("pptx_plan_parse_retry")
+    retry_msgs: list[dict[str, str]] = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": base_user},
+        {"role": "assistant", "content": raw[:6000]},
+        {"role": "user", "content": _retry_monolith_user()},
+    ]
+    t_retry = time.perf_counter()
+    raw2 = await _complete_plan_raw(
+        http,
+        settings,
+        chain=chain,
+        auth_header=auth,
+        messages=retry_msgs,
+    )
+    _log_pptx_timing(
+        {
+            "phase": "plan_monolithic_llm_retry_ms",
+            "ms": round((time.perf_counter() - t_retry) * 1000, 1),
+        }
+    )
+    plan2 = _monolith_plan_from_raw(raw2, settings)
+    if plan2 is not None:
+        return plan2
+    logger.warning("pptx_plan_parse_failed after retry")
+    raise PptxGenError("slide_plan_json_invalid")
 
 
 async def _request_slide_plan_parallel(
@@ -431,7 +470,7 @@ async def _request_slide_plan_parallel(
         chain=chain,
         auth_header=auth,
         messages=outline_messages,
-        max_tokens=2048,
+        max_tokens=_OUTLINE_COMPLETION_MAX,
     )
     outline_ms = (time.perf_counter() - t_outline) * 1000
     try:
@@ -447,7 +486,10 @@ async def _request_slide_plan_parallel(
             len(outline_plan.slides),
             mx,
         )
-        outline_plan = SlidePlan(slides=list(outline_plan.slides[:mx]))
+        outline_plan = SlidePlan(
+            slides=list(outline_plan.slides[:mx]),
+            presentation_title=outline_plan.presentation_title,
+        )
 
     n = len(outline_plan.slides)
     titles = [s.title for s in outline_plan.slides]
@@ -457,6 +499,7 @@ async def _request_slide_plan_parallel(
             "ms": round(outline_ms, 1),
             "slides": n,
             "outline": [{"title": s.title, "kind": s.kind} for s in outline_plan.slides],
+            "presentation_title": outline_plan.presentation_title,
         }
     )
 
@@ -485,22 +528,30 @@ async def _request_slide_plan_parallel(
                 chain=chain,
                 auth_header=auth,
                 messages=agent_msgs,
-                max_tokens=3072,
+                max_tokens=_SLIDE_AGENT_COMPLETION_MAX,
             )
-            try:
-                payload = parse_single_slide_detail_text(raw)
-                spec = clamp_slide_visible_to_max(
-                    slide_spec_from_agent_payload(
-                        payload,
-                        title_fallback=skeleton.title,
-                        kind_fallback=skeleton.kind,
-                    ),
+
+            def _spec_from_response(r: str) -> SlideSpec:
+                payload = parse_single_slide_detail_text(r)
+                spec0 = slide_spec_from_agent_payload(
+                    payload,
+                    title_fallback=skeleton.title,
+                    kind_fallback=skeleton.kind,
                 )
+                return clamp_slide_visible_to_max(spec0)
+
+            sn = _pptx_slide_number(plan_slide_index=idx, settings=settings)
+            try:
+                spec = _spec_from_response(raw)
             except (ValueError, json.JSONDecodeError, ValidationError) as e:
-                logger.info("pptx_slide_agent_parse_retry idx=%s err=%s", idx, e)
+                logger.info(
+                    "pptx_slide_agent_parse_retry pptx_slide_number=%s err=%s",
+                    sn,
+                    e,
+                )
                 retry_msgs = agent_msgs + [
                     {"role": "assistant", "content": raw[:4000]},
-                    {"role": "user", "content": _RETRY_SLIDE_USER},
+                    {"role": "user", "content": _retry_slide_user()},
                 ]
                 raw2 = await _complete_plan_raw(
                     http,
@@ -508,25 +559,24 @@ async def _request_slide_plan_parallel(
                     chain=chain,
                     auth_header=auth,
                     messages=retry_msgs,
-                    max_tokens=3072,
+                    max_tokens=_SLIDE_AGENT_COMPLETION_MAX,
                 )
                 try:
-                    payload = parse_single_slide_detail_text(raw2)
-                    spec = clamp_slide_visible_to_max(
-                        slide_spec_from_agent_payload(
-                            payload,
-                            title_fallback=skeleton.title,
-                            kind_fallback=skeleton.kind,
-                        ),
-                    )
+                    spec = _spec_from_response(raw2)
                 except (ValueError, json.JSONDecodeError, ValidationError) as e2:
-                    raise PptxGenError(f"slide_agent_json_invalid idx={idx}") from e2
+                    raise PptxGenError(
+                        f"slide_agent_json_invalid pptx_slide_number={sn}",
+                    ) from e2
             elapsed = (time.perf_counter() - t0) * 1000
             per_slide_ms.append(elapsed)
-            logger.debug("pptx_timing slide_agent idx=%s ms=%.1f", idx, elapsed)
+            logger.debug(
+                "pptx_timing slide_agent pptx_slide_number=%s ms=%.1f",
+                sn,
+                elapsed,
+            )
             _log_pptx_slide_agent_done(
-                idx=idx,
-                total=n,
+                pptx_slide_number=sn,
+                plan_slides_total=n,
                 spec=spec,
                 ms=elapsed,
                 mode="parallel_slide_agent",
@@ -546,7 +596,10 @@ async def _request_slide_plan_parallel(
             "mean_slide_agent_ms": round(sum(per_slide_ms) / len(per_slide_ms), 1) if per_slide_ms else 0,
         }
     )
-    return SlidePlan(slides=list(filled))
+    return SlidePlan(
+        slides=list(filled),
+        presentation_title=outline_plan.presentation_title,
+    )
 
 
 async def request_slide_plan(
@@ -571,7 +624,10 @@ async def request_slide_plan(
     mx = settings.pptx_max_slides
     if len(plan.slides) > mx:
         logger.info("pptx_plan_truncated plan_slides=%s kept=%s", len(plan.slides), mx)
-        plan = SlidePlan(slides=list(plan.slides[:mx]))
+        plan = SlidePlan(
+            slides=list(plan.slides[:mx]),
+            presentation_title=plan.presentation_title,
+        )
 
     _log_pptx_timing(
         {

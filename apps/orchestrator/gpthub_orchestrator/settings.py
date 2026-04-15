@@ -72,6 +72,40 @@ class Settings(BaseSettings):
         min_length=1,
         description="Assistant text for canned greeting short-circuit",
     )
+    classifier_semantic_enabled: bool = Field(
+        default=False,
+        description=(
+            "If true, refine task_type via MWS embeddings (same model as memory) vs built-in prototypes; "
+            "requires MWS_GPT_API_BASE/KEY. Does not override council/pptx_generation/greeting_or_tiny "
+            "unless classifier_semantic_override_locked_heuristic."
+        ),
+    )
+    classifier_semantic_min_similarity: float = Field(
+        default=0.38,
+        ge=0.0,
+        le=1.0,
+        description="Min cosine similarity to best prototype class to accept semantic task_type.",
+    )
+    classifier_semantic_min_margin: float = Field(
+        default=0.02,
+        ge=0.0,
+        le=0.5,
+        description="Min gap between best and second-best class cosine scores.",
+    )
+    classifier_semantic_min_lead_over_heuristic: float = Field(
+        default=0.04,
+        ge=0.0,
+        le=0.5,
+        description=(
+            "E2E: real embeddings often tie on adjacent classes (e.g. image_generation vs image_analysis). "
+            "If margin vs second-best fails but best score still leads heuristic task_type by at least this gap, "
+            "accept the semantic best class (requires best >= min_similarity and best_task != heuristic task)."
+        ),
+    )
+    classifier_semantic_override_locked_heuristic: bool = Field(
+        default=False,
+        description="Dev only: allow semantic to override council/pptx_generation/greeting_or_tiny.",
+    )
     orchestrator_strip_known_cot_preamble: bool = Field(
         default=False,
         description="If true, non-stream responses may strip known CoT preambles from assistant content (last resort)",
@@ -129,6 +163,46 @@ class Settings(BaseSettings):
         default=False,
         description="Dev/test only: allow fetching private/loopback IPs. Must stay false in prod.",
     )
+    orchestrator_open_webui_data_mount: str | None = Field(
+        default=None,
+        description=(
+            "Directory in the orchestrator container where Open WebUI's /app/backend/data volume is mounted "
+            "(e.g. /mnt/open-webui-backend-data). Enables ingest from message.files[].file.path without base64 in content."
+        ),
+    )
+    orchestrator_open_webui_path_prefix: str = Field(
+        default="/app/backend/data",
+        min_length=1,
+        description="Path prefix in Open WebUI's file.path; replaced by orchestrator_open_webui_data_mount when reading.",
+    )
+    orchestrator_webui_status_enabled: bool = Field(
+        default=False,
+        description=(
+            "If true, POST type=status events to Open WebUI when chat/message id headers are present "
+            "(requires ENABLE_FORWARD_USER_INFO_HEADERS in WebUI and patched forwarding of message_id)."
+        ),
+    )
+    orchestrator_webui_base_url: str = Field(
+        default="",
+        description=(
+            "Open WebUI base URL reachable from this process (Docker: http://gpthub-prod-open-webui:8080). "
+            "No trailing slash."
+        ),
+    )
+    gpthub_internal_event_secret: str = Field(
+        default="",
+        description=(
+            "Shared with Open WebUI GPTHUB_INTERNAL_EVENT_SECRET; "
+            "POST /api/v1/internal/gpthub/chats/.../messages/.../event (preferred over user API key)."
+        ),
+    )
+    orchestrator_webui_event_api_key: str = Field(
+        default="",
+        description=(
+            "Optional Bearer sk- key for WebUI POST /api/v1/chats/.../event "
+            "if gpthub_internal_event_secret is unset."
+        ),
+    )
     image_gen_enabled: bool = Field(
         default=True,
         description="If true, orchestrator detects image-generation intent and calls MWS /images/generations directly.",
@@ -177,7 +251,11 @@ class Settings(BaseSettings):
     )
     pptx_plan_audience: str = Field(
         default="auto",
-        description="Audience hint for slide-plan LLM (auto|general|business|investor|teacher|student).",
+        description=(
+            "Audience hint for slide-plan LLM and bundled template pick "
+            "(auto|general|business|investor|education|creative). "
+            "Maps to filenames in assets/pttx; unknown values → auto."
+        ),
     )
     pptx_plan_scenario: str = Field(
         default="auto",
@@ -202,7 +280,10 @@ class Settings(BaseSettings):
         default=0,
         ge=0,
         le=64,
-        description="Pick template from sorted *.pptx in directory (index wraps modulo file count).",
+        description=(
+            "Fallback when pptx_plan_audience-mapped .pptx is missing from the templates directory: "
+            "pick sorted *.pptx by index (wraps modulo count)."
+        ),
     )
     pptx_artifacts_public_base_url: str = Field(
         default="",
@@ -326,6 +407,14 @@ class Settings(BaseSettings):
         ),
     )
 
+    @field_validator("pptx_plan_audience", mode="before")
+    @classmethod
+    def normalize_pptx_plan_audience_field(cls, v: object) -> str:
+        # Local import: avoid cycle (pptx.__init__ → build → settings).
+        from gpthub_orchestrator.pptx.audience_templates import normalize_pptx_plan_audience
+
+        return normalize_pptx_plan_audience(v)
+
     @field_validator("model_roles_path", "role_prompts_path", mode="before")
     @classmethod
     def empty_str_paths_to_none(cls, v: object) -> str | None:
@@ -343,6 +432,18 @@ class Settings(BaseSettings):
     @classmethod
     def strip_canned_message(cls, v: str) -> str:
         return v.strip()
+
+    @field_validator(
+        "orchestrator_webui_base_url",
+        "orchestrator_webui_event_api_key",
+        "gpthub_internal_event_secret",
+        mode="before",
+    )
+    @classmethod
+    def strip_webui_optional_str(cls, v: object) -> str:
+        if v is None:
+            return ""
+        return str(v).strip()
 
     @field_validator(
         "orchestrator_asr_base_url",

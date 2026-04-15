@@ -6,12 +6,14 @@ import asyncio
 import copy
 import json
 import logging
+from collections import Counter
 import time
 from typing import Any
 
 import httpx
 
 from gpthub_orchestrator.ingest.asr_client import AsrError, transcribe_audio_bytes
+from gpthub_orchestrator.ingest.open_webui_uploads import extract_open_webui_upload_work_items
 from gpthub_orchestrator.ingest.parts import (
     FileWorkItem,
     extract_file_work_items,
@@ -34,6 +36,23 @@ from gpthub_orchestrator.settings import Settings
 logger = logging.getLogger(__name__)
 
 _ARTIFACT_CONTENT_CAP = 24_000
+
+
+def _file_items_summary(indexed_items: list[tuple[int, Any]]) -> str:
+    return json.dumps(
+        [
+            {"part_idx": i, "filename": w.filename, "mime": w.mime, "raw_bytes": len(w.raw)}
+            for i, w in indexed_items
+        ],
+        ensure_ascii=False,
+    )
+
+
+def _owui_disk_summary(items: list[FileWorkItem]) -> str:
+    return json.dumps(
+        [{"filename": w.filename, "mime": w.mime, "raw_bytes": len(w.raw)} for w in items],
+        ensure_ascii=False,
+    )
 
 
 def _is_audio_item(mime: str, filename: str) -> bool:
@@ -136,7 +155,14 @@ def _artifact_for_trace(a: dict[str, Any]) -> dict[str, Any]:
 
 
 def _build_artifact_system_message(artifacts: list[dict[str, Any]]) -> dict[str, Any]:
-    lines = ["## GPTHub ingested context (orchestrator)", ""]
+    lines = [
+        "## GPTHub ingested context (orchestrator)",
+        "",
+        "### Policy (this turn)",
+        "**EN:** Answer primarily from the attachments / ingest blocks below. Treat earlier chat turns as secondary unless the user clearly refers to them. If sources disagree, prefer the material in this section (newest ingest wins).",
+        "**RU:** Отвечай в первую очередь по вложениям и тексту ниже. Предыдущие реплики чата — вторичны, пока пользователь явно к ним не обращается. При противоречии приоритет у материала в этом тексте.",
+        "",
+    ]
     for a in artifacts:
         t = a.get("type")
         title = a.get("title", "")
@@ -146,6 +172,33 @@ def _build_artifact_system_message(artifacts: list[dict[str, Any]]) -> dict[str,
         lines.append("")
     body = "\n".join(lines).strip()
     return {"role": "system", "content": body}
+
+
+def _append_ingest_attachment_summary_to_user(
+    msgs: list[dict[str, Any]],
+    user_idx: int,
+    artifacts: list[dict[str, Any]],
+) -> None:
+    """Append a short RU line with artifact types and counts so the last user turn is non-empty for routing."""
+    if not artifacts:
+        return
+    counts = Counter(str(a.get("type") or "unknown") for a in artifacts)
+    summary = ", ".join(f"{t} — {n}" for t, n in sorted(counts.items()))
+    tail = f"Прикреплённые документы: {summary}"
+    msg = msgs[user_idx]
+    content = msg.get("content")
+    if isinstance(content, str):
+        base = content.rstrip()
+        msg["content"] = f"{base}\n\n{tail}" if base else tail
+    elif isinstance(content, list):
+        if content and isinstance(content[-1], dict) and content[-1].get("type") == "text":
+            prev = str(content[-1].get("text") or "").rstrip()
+            content[-1]["text"] = f"{prev}\n\n{tail}" if prev else tail
+        else:
+            content.append({"type": "text", "text": tail})
+        msg["content"] = content
+    else:
+        msg["content"] = tail
 
 
 def _parse_pdf_sync(item: FileWorkItem, settings: Settings) -> str:
@@ -174,13 +227,24 @@ async def _process_one_audio(
 ) -> dict[str, Any]:
     base_url = settings.resolved_asr_base_url()
     api_key = settings.resolved_asr_api_key()
+    ct = item.mime if "/" in item.mime else "application/octet-stream"
+    logger.info(
+        "asr_ingest_start filename=%s mime=%s bytes=%s asr_base_configured=%s",
+        item.filename,
+        ct,
+        len(item.raw),
+        bool(base_url and api_key),
+    )
     if not base_url or not api_key:
+        logger.warning(
+            "asr_ingest_skipped_missing_credentials filename=%s hint=ORCHESTRATOR_ASR_*_or_MWS_GPT_API_*",
+            item.filename,
+        )
         return {
             "type": "transcript",
             "title": item.filename,
             "content": "[Audio attachment present; set ORCHESTRATOR_ASR_BASE_URL/ASR_API_KEY or MWS_GPT_API_BASE/KEY.]",
         }
-    ct = item.mime if "/" in item.mime else "application/octet-stream"
     try:
         text = await transcribe_audio_bytes(
             http,
@@ -194,6 +258,12 @@ async def _process_one_audio(
     except AsrError as e:
         logger.warning("asr_ingest_failed file=%s err=%s", item.filename, e)
         text = f"[ASR error: {e}]"
+    logger.info(
+        "asr_ingest_done filename=%s transcript_chars=%s head=%s",
+        item.filename,
+        len(text),
+        text[:400].replace("\n", "\\n"),
+    )
     if len(text) > _ARTIFACT_CONTENT_CAP:
         text = text[:_ARTIFACT_CONTENT_CAP] + "\n… [truncated]"
     return {"type": "transcript", "title": item.filename, "content": text}
@@ -248,16 +318,52 @@ async def run_ingest_pipeline(
     Returns (new_messages, trace_artifacts, ingest_ms).
     """
     if not settings.ingest_enabled:
+        pidx, pit = extract_file_work_items(messages)
+        owui_off = (
+            extract_open_webui_upload_work_items(messages[pidx], settings)
+            if pidx is not None
+            else []
+        )
+        logger.info(
+            "ingest_disabled ingest_enabled=false peek_user_idx=%s peek_items=%s open_webui_disk=%s",
+            pidx,
+            _file_items_summary(pit) if pit else "[]",
+            _owui_disk_summary(owui_off) if owui_off else "[]",
+        )
         return messages, [], None
 
     peek_idx, peek_items = extract_file_work_items(messages)
     peek_urls = _peek_urls(messages, settings)
-    if (peek_idx is None or not peek_items) and not peek_urls:
+    owui_peek: list[FileWorkItem] = (
+        extract_open_webui_upload_work_items(messages[peek_idx], settings)
+        if peek_idx is not None
+        else []
+    )
+    logger.info(
+        "ingest_peek last_user_msg_idx=%s file_parts=%s open_webui_disk=%s urls=%s",
+        peek_idx,
+        _file_items_summary(peek_items) if peek_items else "[]",
+        _owui_disk_summary(owui_peek) if owui_peek else "[]",
+        json.dumps(peek_urls, ensure_ascii=False),
+    )
+    if (peek_idx is None or not peek_items) and not peek_urls and not owui_peek:
+        logger.info("ingest_noop no_file_parts_no_urls_no_open_webui_disk")
         return messages, [], None
 
     t0 = time.perf_counter()
     msgs = copy.deepcopy(messages)
     user_idx, indexed_items = extract_file_work_items(msgs)
+    owui_items: list[FileWorkItem] = (
+        extract_open_webui_upload_work_items(msgs[user_idx], settings)
+        if user_idx is not None
+        else []
+    )
+    logger.info(
+        "ingest_extract deepcopy_user_idx=%s indexed_parts=%s open_webui_disk=%s",
+        user_idx,
+        _file_items_summary(indexed_items) if indexed_items else "[]",
+        _owui_disk_summary(owui_items) if owui_items else "[]",
+    )
 
     drop_indices: set[int] = set()
     tasks: list[Any] = []
@@ -282,11 +388,39 @@ async def run_ingest_pipeline(
                 meta.append(("text", part_idx))
                 drop_indices.add(part_idx)
 
+        for ow_i, item in enumerate(owui_items):
+            key = f"owui:{ow_i}"
+            if item.mime == "application/pdf" or item.filename.lower().endswith(".pdf"):
+                tasks.append(_process_one_pdf(item, settings))
+                meta.append(("pdf", key))
+            elif _is_audio_item(item.mime, item.filename):
+                tasks.append(_process_one_audio(item, settings, http))
+                meta.append(("audio", key))
+            elif is_richdoc_item(item.mime, item.filename):
+                tasks.append(_process_one_richdoc(item))
+                meta.append(("richdoc", key))
+            elif _is_plain_text_item(item.mime, item.filename):
+                tasks.append(_process_one_plain_text(item))
+                meta.append(("text", key))
+            else:
+                logger.warning(
+                    "ingest_open_webui_disk_unhandled filename=%s mime=%s",
+                    item.filename,
+                    item.mime,
+                )
+
     for url in peek_urls:
         tasks.append(_process_one_url(url, settings, http))
         meta.append(("url", url))
 
     if not tasks:
+        logger.info(
+            "ingest_no_tasks_after_queue user_idx=%s indexed_n=%s owui_n=%s url_n=%s",
+            user_idx,
+            len(indexed_items),
+            len(owui_items),
+            len(peek_urls),
+        )
         return messages, [], None
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -306,6 +440,10 @@ async def run_ingest_pipeline(
 
     if user_idx is not None and drop_indices:
         strip_content_indices(msgs, user_idx, drop_indices)
+    if user_idx is not None and owui_items:
+        msgs[user_idx].pop("files", None)
+    if user_idx is not None:
+        _append_ingest_attachment_summary_to_user(msgs, user_idx, artifacts)
     sys_msg = _build_artifact_system_message(artifacts)
     msgs.insert(0, sys_msg)
 

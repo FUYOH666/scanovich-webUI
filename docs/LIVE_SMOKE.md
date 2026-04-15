@@ -6,6 +6,9 @@
 > Правило: **никакой ряд не помечается `Implemented` в
 > `FEATURE_MATRIX.md` без хотя бы одной записи здесь**. Unit-тест этого
 > не заменяет — unit-тест проверяет код, а журнал проверяет стек.
+>
+> Датированные записи ниже ведутся **по возрастанию времени** (старые выше,
+> новые ниже, непосредственно перед разделом «Шаг 1»).
 
 ## Формат записи
 
@@ -26,6 +29,14 @@
 (починили / обошли / отложили / kill switch).
 
 ---
+
+## 2026-04-11 — Verification package: pytest + compose rebuild + `demo.sh`
+
+- **Stack commit:** `fa1d548` (`main`).
+- **Env:** `.env` + `.env.mws.local`; `docker compose -f infra/docker-compose.yml up -d --build` (образ `orchestrator` пересобран).
+- **Input:** (1) `cd apps/orchestrator && uv sync --extra dev && uv run pytest -q` (2) `./scripts/demo.sh` с `ORCHESTRATOR_URL=http://localhost:8089` и ключом из `.env` (тот же, что WebUI / `LITELLM_MASTER_KEY`).
+- **Result:** pytest **261 passed, 2 skipped**. `demo.sh` **PASS=13 FAIL=0 WARN=0** (полный прогон с WOW-1 + WOW-3, ~7 min; доминирует council).
+- **Notes:** Счётчик `PASS` в скрипте — число вызовов `ok` (сейчас **13**: два health-check, каталог моделей, два чека по тексту, URL, image, два по memory, два по classifier, council, PPTX). В старых журналах встречается **PASS=12** — это сдвиг счётчика/чеклиста, не регрессия. Memory remember+recall в этом прогоне **OK**. **Остатки для команды (без кода):** `ROADMAP.md` Step 6 (operator WebUI), Step 8 (demo-video), Step 9 (`demo-ready` + финальные артефакты).
 
 ## 2026-04-11 — Step 1 teardown legacy v3 stack
 
@@ -82,6 +93,82 @@
   PDF and either confirm the chat response or capture the new error.
   Until that retry is recorded here, Row 6 Files remains formally
   blocked from `Implemented` in `FEATURE_MATRIX.md`.
+
+## 2026-04-12 — Row 7 Web search: «Источники не найдены» / model denies internet
+
+- **Stack:** `gpthub-prod-open-webui` v0.8.12; `ENABLE_WEB_SEARCH=true`, Tavily OK in logs.
+- **Symptom:** UI shows web search ON; gray **«Источники не найдены»**; assistant says it has no direct internet access.
+- **Root cause:** after Tavily, WebUI runs **`save_docs_to_vector_db`** / web-search chunk indexing and calls
+  **`embedding_function.encode`** while **`embedding_function` is `None`** (same class of bug as Row 6 PDF).
+  File uploads use `BYPASS_EMBEDDING_AND_RETRIEVAL`; web search has a **separate** flag
+  **`BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL`** (`config.py` PersistentConfig).
+- **Fix:** set **`BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=true`** in `.env` (see `.env.example`) **or**
+  Admin → Settings → Web Search → enable **«Обход встраивания и извлечения данных»** for web search,
+  then `docker compose -f infra/docker-compose.yml up -d --force-recreate open-webui`.
+  If the value was persisted earlier in the DB, use Admin UI or `ENABLE_PERSISTENT_CONFIG=false` per Open WebUI docs.
+- **Status:** bypass env live in container; operator smoke ongoing.
+
+### 2026-04-12 — Row 7 follow-up: «6 источников» → «источники не найдены», ответ с новостями есть
+
+- **Observed:** статус сначала показывает ненулевое число источников (напр. 6), затем
+  **«Источники не найдены»**, при этом ассистент выдаёт актуальные формулировки по теме
+  (напр. новости rbk.ru).
+- **Interpretation (stack):** Tavily + инъекция сниппетов в исходящие `messages` к
+  orchestrator работают; **orchestrator / LiteLLM / MWS не управляют** панелью источников
+  WebUI. При **`BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL`** WebUI **не** кладёт
+  web-сниппеты в свою vector-коллекцию; блок UI «источники» часто строится из
+  **другого** шага (структурированные `source` / retrieval после индексации). Итог:
+  **рассинхрон числа/плашки и фактического ответа — ожидаемая особенность UX**, не баг
+  GPTHub-spine. Критерий работоспособности ряда 7: **содержание ответа опирается на
+  поиск**, а не зелёность панели цитат.
+- **If you need pretty citations:** либо поднять полноценный WebUI RAG + embedding
+  (отдельное решение, дублирует политику «ingest в orchestrator»), либо жить с bypass
+  и ориентироваться на текст ответа / ссылки внутри `content`, если модель их цитирует.
+
+## 2026-04-12 16:08 — Step 7 WOW-3 PPTX live confirmation
+
+- **Stack commit:** `main` after PPTX CoT fix (orchestrator rebuilt with `--build`).
+- **Env:** `.env` + `.env.mws.local`; `pptx_plan_model=gpt-hub-strong` (default).
+- **Input:** Three curl requests against orchestrator `POST /v1/chat/completions`:
+  1. `"сделай презентацию про архитектуру RAG системы"` — natural language RU trigger
+  2. `"/pptx архитектура RAG системы"` — slash command
+  3. `"давай, в формате pptx будет? создай презентацию про AI"` — broadened pattern
+- **Model(s) used:** `gpt-hub-strong` (glm-4.6-357b) for slide plan; `gpt-hub-turbo` for fallback classification.
+- **Latency:** ~40 s per request (plan generation + retry).
+- **Result:** **OK (3/3 PASS)**. All three produced valid .pptx files.
+  - Request 1: "Архитектура RAG-систем" — 7 slides, 35 KB, download 200 OK.
+  - Request 3: "Искусственный интеллект: от теории к практике" — 6 slides, 34 KB.
+- **Trace highlights:** `short_circuit: "pptx_generation"`, `plan_model: "gpt-hub-strong"`, `slide_count: 7`.
+- **Notes:** Root cause of earlier failures: MWS `gpt-hub-strong` (glm-4.6-357b)
+  wraps all output in `<think>…</think>` Chinese CoT blocks before the actual JSON.
+  `_strip_cot_blocks()` added to `pptx_gen.py` — strips CoT before JSON parsing.
+  First plan attempt still sometimes fails (JSON comma delimiter errors inside
+  Chinese CoT braces); retry consistently succeeds after CoT strip. Also broadened
+  intent patterns to match «в формате pptx» and «формат pptx».
+  Download endpoint `GET /v1/files/pptx/{token}` confirmed: 200, correct MIME type,
+  valid PPTX file opens in PowerPoint. Row 14 (WOW-3) **confirmed live**.
+
+## 2026-04-12 16:07 — E2E simulation: text, image-gen, memory
+
+- **Stack commit:** `main` after PPTX CoT fix.
+- **Env:** `.env` + `.env.mws.local`.
+- **Input:** Curl requests:
+  1. `"Привет! Что такое RAG?"` — text chat
+  2. `"нарисуй кота в космосе"` — image generation
+  3. `"запомни: мой любимый язык программирования — Python"` — memory save
+  4. `"что ты помнишь?"` — memory recall
+- **Result:** **OK (4/4 PASS)**.
+  - Text: `gpt-hub-turbo` → 506-char RU response.
+  - Image: `qwen-image` → valid MWS image URL, inline markdown.
+  - Memory save: embedding took ~30 s (MWS `qwen3-embedding-8b` slow but works), fact stored.
+  - Memory recall: correctly returned 0 facts (different chat session = different user_id).
+- **Notes:** All short-circuits working: image_gen, memory_command. Row 1, 3, 9 confirmed.
+
+## 2026-04-11 — E2E simulation follow-up: memory save vs embedding latency
+
+- **Stack:** same as block above (`main` after PPTX CoT fix); orchestrator → MWS `qwen3-embedding-8b` for «запомни».
+- **Result (separate run):** text + image-gen + memory **recall** **PASS**; memory **save** → **ReadTimeout** on embedding HTTP client (MWS slow/unreachable/DNS from container — не детерминировано).
+- **Mitigation:** поднять `memory_embedding_timeout_seconds` (см. `settings.py` / env), проверить `POST /v1/embeddings` с хоста и **изнутри** `gpthub-prod-orchestrator` (`docker exec … curl`). Противоречит не «докам», а **флаппи MWS/сети**: см. успешный save ~30 s в блоке **2026-04-12 16:07** выше.
 
 ## 2026-04-11 11:46 — Step 5 full `demo.sh` (including WOW-1) end-to-end
 
@@ -195,7 +282,7 @@
 
 > Ориентир по времени: **13:50** МСК; в логах оркестратора тот же прогон — **10:54:40** UTC → **10:55:23** UTC (`execution_trace` с `"slides": 9`). Детализация фаз — в `out.txt` (корень рабочей копии).
 
-- **Stack commit:** _—_ (сверить `git rev-parse --short HEAD`)
+- **Stack commit:** 027372f
 - **Env:** тот же стек, что и соседние PPTX-записи (WebUI + orchestrator, `pptx_parallel_slide_agents_enabled`).
 - **Input:** текстовый запрос на презентацию по теме **«природа»**, **9 слайдов** в плане (parallel slide-agents).
 - **Model(s) used:** по trace — `task_type: pptx`, цепочка strong / slide-plan (как в других PPTX smoke).
@@ -204,38 +291,207 @@
 - **Trace highlights:** 9× `pptx_slide_agent_done`; max на слайде с заголовком в духе «Экосистемы и их разнообразие» (~**39,6 с**), остальные короче.
 - **Notes:** **Титульный / вводный слайд в деке есть** — проблема качества/скорости не в отсутствии титульника и не в `python-pptx` (**~0,25 с** на сборку), а в **overhead на тексте слайдов**: параллельные агенты упираются в **самый медленный** вызов LLM на одном слайде. Для сравнения второй крупный прогон в том же логе («океан», 10 слайдов) — wall slide-agents **~17,5 с**, `plan_total_ms` **~21,2 с** (`out.txt`).
 
+## 2026-04-13 — `demo_benchmark.py` на `server-gpt` + разбор `docker compose` логов (WOW latency)
+
+- **Stack commit:** e84bf7460353c24a311837de1c4cd88a2552d298
+- **Env:** стек `gpthub-prod-*` на ВМ; прогон из `~/scanovich-webUI`; ключи из `.env` (как для `demo.sh`). Логи сняты целью Make из рабочей копии хакатона: `ресурсы/YandexCloud/Makefile` → `make logs-scanovich-compose > ресурсы/YandexCloud/logs.txt` (stdout: `docker compose … logs --tail 200` на сервере через `yc compute ssh`, плюс фильтр `awk` по health-шуму).
+- **Input:** `python3 scripts/demo_benchmark.py` (полный сценарий, без `--skip-wow`; те же шаги, что `scripts/demo.sh`, с замером `time.perf_counter()` на каждый HTTP-вызов).
+- **Result:** **PASS=13 FAIL=0 WARN=0** — baseline + WOW зелёные.
+
+### Latency (мс по шагам скрипта)
+
+| Step | Label | ms | Note |
+|------|--------|-----:|------|
+| 1/9 | GET /healthz | 20.3 | OK |
+| 1/9 | GET /readyz | 4.8 | OK |
+| 2/9 | GET /v1/models | 3.7 | OK |
+| 3/9 | POST text chat | 2152.3 | OK choices |
+| 4/9 | POST URL ingest | 1234.9 | OK |
+| 5/9 | POST image gen | 12216.7 | OK |
+| 6/9 | POST remember | 185.9 | OK |
+| 6/9 | POST recall | 2.3 | OK |
+| 7/9 | POST reasoning | 3672.3 | OK choices |
+| 8/9 | POST council | **121308.1** | OK |
+| 9/9 | POST pptx | **67112.9** | OK |
+
+### Что показали логи (`ресурсы/YandexCloud/logs.txt`, оркестратор)
+
+- **Expert Council (шаг 8 / ~121 с):** в `execution_trace` на **2026-04-13 07:33:04** — `short_circuit: expert_council`, **`total_ms`: 121305** (совпадает с бенчмарком). Три ветки **успешно параллельно** (`branches_failed: []`), индивидуальные **`latency_ms`** в trace: **7958** (`gpt-hub-turbo`, Generalist), **13332** (`gpt-hub-reasoning-or`), **17252** (`gpt-hub-doc`) — wall фазы fan-out порядка **~17 с** (упирается в doc-ветку). По меткам времени в том же файле: последний `POST …/chat/completions` **LiteLLM** у экспертов около **07:31:20**, ответ синтезатора — около **07:33:04** → **~104 с** уходит на **синтез** (`gpt-hub-strong`, длинный промпт с тремя мнениями). Итог: доминирует не fan-out, а **один вызов synthesis**.
+- **PPTX (шаг 9 / ~67 с):** сразу после council — classifier `pptx_generation`. В логе **`pptx_plan_first_attempt_failed`** с **`json_parse_error`** (первый JSON плана битый); второй `POST …/chat/completions` успешен. В `execution_trace` на **07:34:11**: **`plan_ms`: 66648**, **`build_ms`: 461**, 5 слайдов — узкое место **планирование/повтор**, сборка **python-pptx** — доли секунды.
+- **Побочные наблюдения в том же файле:** пачка **`GET /v1/chat/completions` → 405** на оркестраторе (чужой клиент с GET вместо POST — не этот бенч). Шаг URL в **`demo_benchmark.py`** бьёт по **`https://mws.ru/services/mws-gpt/?utm_source=organic_google`**; в норме в логах оркестратора — **`ingest_complete`** с **`url_text`** и prepended **`system`** с заголовком **«GPT для бизнеса: LLM платформа - MWS»** (как в Row 7–8).
+
+- **Notes:** Полный прогон по-прежнему **WOW-dominated** (council ≫ остальное). Для презентации/оптимизации: смотреть **таймауты/модель синтеза** council и **стабильность JSON** плана PPTX (retry уже есть). Источник таблицы — терминальный вывод прогона на `server-gpt`; источник разбора фаз — строки **230–249** `ресурсы/YandexCloud/logs.txt` (`gpthub-prod-orchestrator`).
+
+## 2026-04-13 — `demo_benchmark.py` (терминал локального/другого прогона): council ~165 s, PPTX ~15 s
+
+- **Stack commit:** _как у рабочего клона на момент прогона_
+- **Env:** `python3 scripts/demo_benchmark.py` из `scanovich-webUI`; `ORCHESTRATOR_URL` + ключ как для WebUI.
+- **Input:** полный сценарий (без `--skip-wow`), те же шаги, что `demo.sh`, с замером `perf_counter` на HTTP.
+- **Result:** **PASS=13 FAIL=0 WARN=0**.
+
+### Latency (мс по шагам — как в терминале)
+
+| Step | Label | ms | Note |
+|------|--------|-----:|------|
+| 1/9 | GET /healthz | 20.4 | OK |
+| 1/9 | GET /readyz | 5.1 | OK |
+| 2/9 | GET /v1/models | 3.9 | OK |
+| 3/9 | POST text chat | 1954.9 | OK |
+| 4/9 | POST URL ingest | 1443.0 | OK |
+| 5/9 | POST image gen | 23257.6 | OK |
+| 6/9 | POST remember / recall | 337.0 / 175.6 | OK |
+| 7/9 | POST reasoning | 5644.3 | OK |
+| 8/9 | POST council | **164708.0** | OK |
+| 9/9 | POST pptx | **15444.2** | OK |
+
+### Разбор по `ресурсы/YandexCloud/logs.txt` (фрагмент `gpthub-prod-orchestrator`)
+
+- **Шаг 8 / council ~165 s:** в `execution_trace` — `orchestrator_fallback.short_circuit: expert_council`. Строка с **`total_ms`: 164705** (стр. ~95) совпадает с wall time клиента. Три ветки в trace с отдельными **`latency_ms`** (~8 s / ~31 s / ~17 s) не суммируются в 165 s: основная задержка — **цепочка после fan-out**, в т.ч. **синтез** (`gpt-hub-strong`, ещё один тяжёлый `POST …/chat/completions` в LiteLLM). Это ожидаемо для deep research / council, а не «оркестратор ждёт сам с собой».
+- **Шаг 9 / PPTX ~15 s:** сразу после ответа council — маршрут `pptx_generation` (в логе семантика пропущена: `semantic_skipped_locked_heuristic_task`). В **`pptx_timing`**: **`plan_outline_llm_ms` ~9849.8**; **`plan_slide_agents_ms` (wall)** ~5372.7 при **`concurrency`: 7**; **`plan_total_ms` ~15223.2**; **`build_deck_ms` ~217.7** (стр. ~105–122, 129). Сборка файла — доли секунды; **~15 s** — это план + параллельные slide-agents, без multi-minute synthesis как у council.
+
+- **Notes:** В отчёт `demo_benchmark.py --json` добавлено поле **`pptx_download_urls`** (одноразовые `GET /artifacts/pptx/…?token=…`) для скачивания `.pptx` после смока.
+
+## 2026-04-13 — Разбор `logs.txt`: council ~176 с, PPTX timeout ~180 с (другой фрагмент того же файла)
+
+- **Stack commit:** d289e39
+- **Env:** `gpthub-prod-orchestrator`; логи: `ресурсы/YandexCloud/logs.txt` (снятие через `make logs-scanovich-compose` из рабочей копии хакатона).
+- **Input:** тот же файл логов, что и у записи **`demo_benchmark.py`** выше, но **другой** интервал по времени / другой полный прогон в терминале.
+- **Model(s) used:** council — синтез `gpt-hub-strong`; PPTX — цепочка плана/слайдов из trace того фрагмента.
+- **Latency:** council **`total_ms`: 176426** (~176 с) — совпадает с терминалом; PPTX клиент **~180003 ms**, в логах **`pptx_gen_failed err=timeout`** (~`pptx_plan_timeout_seconds`, на стенде часто **180**).
+- **Result:** **PARTIAL** — council в том фрагменте завершился; PPTX оборван по таймауту пайплайна.
+- **Trace highlights:**
+  - **Council:** ветки **strong / reasoning / doc** ~**7–17 с** каждая, **параллельно**; почти всё время ~**176 с** — **один вызов синтеза** (длинный контекст: три экспертных ответа + промпт).
+  - **PPTX:** `plan_outline_llm_ms` порядка **~8 с**; slide agents — часть **8–11 с**, отдельные вызовы **~60 с** и **~82 с**; в **старых** логах того прогона — **`slide_too_short`** и повторные запросы (**в текущем коде** ретрай по минимуму символов **убран**, в промптах — мягкий ориентир); **`reasoning_fields_stripped_from_completion`** встречалось.
+- **Notes:** Для углубления — LiteLLM по тем же меткам времени / `request_id`. При необходимости поднять **`PPTX_PLAN_TIMEOUT_SECONDS`** или снизить нагрузку (меньше слайдов, другая модель slide agents). В **`pptx_slide_agent_done`** в JSON: **`pptx_slide_number`**, **`plan_slides_total`** (без `outline_idx` / `deck_slide_*`).
+
+## 2026-04-13 ~18:50 UTC — Row 2 Voice (mic): STT OK, пустой `user.content` в оркестраторе, 413 на `embedding-shim`
+
+- **Stack commit:** _n/a (прод-стек `gpthub-prod-*` на VM; фрагмент логов: `ресурсы/YandexCloud/logs.txt`)_
+- **Env:** compose с `gpthub-prod-open-webui`, `gpthub-prod-orchestrator`, `gpthub-prod-litellm`, **`gpthub-prod-embedding-shim`** (RAG); в UI модель **`gpt-hub`**.
+- **Input:** голос с микрофона в WebUI (загрузка как **`video/webm`**, имя вида `…21-50-08.webm`); новый чат после записи.
+- **Model(s) used:** STT — **`faster_whisper`** внутри контейнера WebUI (не MWS `whisper-medium` на этом шаге); ответ чата — через оркестратор → LiteLLM → MWS.
+- **Latency:** ~3.2 с аудио на стороне whisper; далее несколько быстрых `POST` к оркестратору (в т.ч. служебные промпты WebUI с префиксом `### Task:`).
+- **Result:** **PARTIAL** — транскрипт и индексация файла в векторную коллекцию прошли; сценарий «один нормальный ответ на голос» не закрыт: зафиксирован **пустой** текст пользователя в одном из вызовов и **ошибка RAG** при эмбеддинге.
+- **Trace highlights:**
+  - **WebUI / STT:** `open_webui.routers.files:upload_file` (`video/webm`) → `open_webui.routers.audio:transcribe` → конвертация **webm → mp3** → `faster_whisper`: `Processing audio with duration 00:03.180`, язык **`ru`**, вероятность **~0.94** → `save_docs_to_vector_db` / `process_file` — **1** чанк в коллекцию `file-65412b3c-…`.
+  - **Orchestrator:** `incoming_chat_messages` с непустым `content` на первом круге; затем **`messages: [{"role":"user","content":""}]`** → `classifier_route_resolution` с **`semantic_skipped_empty_user_text`**, **`simple_chat`**.
+  - **WebUI / RAG:** в `process_chat` → `chat_completion_files_handler` → `get_sources_from_items` → `query_collection` — запрос эмбеддинга на **`http://embedding-shim:8000/v1/embeddings`** → **`413 Request Entity Too Large`** (в стектрейсе у `query_embeddings` встречается **`queries: ['']`**); отдельная строка лога shim: **`413`** на `POST /v1/embeddings`.
+- **Notes:**
+  - **Две линии расследования:** (1) почему WebUI в одном из шагов шлёт в оркестратор **пустой** `user.content` после успешного STT; (2) почему цепочка источников бьётся об **413** на shim (лимит тела/прокси, пустой query, конфиг RAG).
+  - **Row 2 vs Row 4:** здесь распознавание — **UI-managed** whisper в WebUI; **Row 4** (ASR вложений в оркестраторе, MWS `whisper-medium`) — отдельный продуктовый путь, см. `docs/WEBUI_PAYLOAD.md`.
+  - **Что сделать дальше:** локально воспроизвести; для одного падения снять **полный** JSON тела `POST /v1/chat/completions` к оркестратору; проверить лимиты **`apps/embedding_shim`** и upstream; при сжатых сроках — осознанный bypass RAG (см. Row 6 / `BYPASS_EMBEDDING_AND_RETRIEVAL`) или правка ветки `chat_completion_files_handler` в форке WebUI. После фикса — дописать сюда запись **OK** с тем же сценарием.
+  - **Якоря в логе:** `ресурсы/YandexCloud/logs.txt` — WebUI **18:50:17–18:50:20** (upload / transcribe / индексация); оркестратор **18:50:23–18:50:31**; пустой content **18:50:27,637**; **413** и стек **18:50:27.619** (`retrieval/utils.py:1145`).
+
+## 2026-04-14 — Row 6 / Row 4: PPTX + голос + PDF (YC VM, см. `logs.txt`)
+
+- **Stack commit:** `140d779` (оркестратор с общим томом `open-webui-data` → `ORCHESTRATOR_OPEN_WEBUI_DATA_MOUNT`, ingest из `message.files` по пути Open WebUI).
+- **Env:** `infra/docker-compose.yml` с `--profile rag`; на ВМ `~/scanovich-webUI`: `.env` + `.env.mws.local`; логи агрегата: `ресурсы/YandexCloud/logs.txt` (снятие через `make logs-scanovich-compose` / эквивалент).
+- **Input (три сценария вручную в WebUI, модель `gpt-hub`):**
+  - **A:** загрузка **презентации (.pptx)** → вопрос по содержимому → затем **аудиозапрос** (голос / вложение после PPTX).
+  - **B:** загрузка **той же презентации без отображаемого имени** (как в UI) → затем **PDF** в **том же чате** → вопрос, ожидающий учёт PDF.
+  - **C:** **только PDF** в **новом** чате → вопрос по содержимому.
+- **Model(s) used:** по сценарию — `gpt-hub-doc` / richdoc после ingest PPTX; `gpt-hub-turbo` на простые реплики; ASR — путь WebUI STT + при наличии вложения — оркестратор `ingest` / MWS `whisper-medium` в зависимости от формы payload (см. Row 2 vs Row 4 в журнале).
+- **Latency:** _не замерялись точно; в логах embedding-shim преимущественно 200 (без доминирующего 413 в этом фрагменте)._
+- **Result:** **PARTIAL**
+  - **A:** **OK** — первый чат: презентация разобрана, ответ по смыслу слайдов; **аудиозапрос обработан корректно**.
+  - **B:** **FAIL (продуктовый край)** — по логам оркестратора (**~11:58:34 UTC**) это **два user-тёрна** (сначала сообщение с PPTX, затем отдельное с PDF), а не одно сообщение с двумя файлами. **PDF инжестится и попадает в `system` как `document_text`** (текст survey про LLM-agents for SE присутствует в `after_ingest`). Тем не менее ответ в продукте **не опирается на PDF**: ассистент **продолжает линию предыдущего ответа** (после PPTX). В трейсе: **`semantic_skipped_empty_user_text`** → эвристика **`simple_chat`** → **`gpt-hub-turbo`** при **пустом** `user.content` на последнем тёрне; в истории остаётся длинный **assistant** после презентации, который конкурирует с блоком PDF в system. В бэклог: маршрутизация при вложениях без текста / приоритет свежего `document_text` относительно прошлого assistant.
+  - **C:** **OK** — в **отдельном** чате **PDF обработан корректно**.
+- **Trace highlights:** для успешных PPTX/PDF — **`ingest_peek`** с ненулевым **`open_webui_disk`**, **`ingest_complete`** с **`document_text`** в system; для **B** — то же для PDF на втором тёрне, но **видимый ответ пользователю** не отражает PDF (см. классификатор и `gpt-hub-turbo` выше).
+- **Notes:** **FEATURE_MATRIX** ряд 6: одиночные вложения закрывают сценарий. Отдельно (другая гипотеза): ingest с диска идёт **только с последнего user-сообщения** — сырой PPTX с **предыдущего** тёрна второй раз не очередится; если понадобится «оба файла в одном ответе» без повторной загрузки — нужна доработка (обход ранних `message.files` или явный UX). **Много файлов в одном сообщении** — тоже отдельная проверка очереди по всем `files`. Made-with: Cursor.
+
+## 2026-04-14 — Один чат: PPTX → PDF → голос → презентация «операторы» → `/research` карьера МТС (YC VM)
+
+- **Stack commit:** _как на ВМ в момент прогона_ (см. деплой `scanovich-webUI`; оркестратор с RAG-профилем и общим томом WebUI).
+- **Env:** `infra/docker-compose.yml` с `--profile rag`; `.env` + `.env.mws.local` на ВМ; агрегат логов: `ресурсы/YandexCloud/logs.txt` (`make logs-scanovich-compose`).
+- **Input (последовательность в одном чате, модель `gpt-hub`):**
+  1. **PPTX** — загрузка презентации, ответ по содержимому: **OK** (контент ушёл в модель).
+  2. **PDF** (LLM-survey): **OK**, документ обработан.
+  3. **Диктофон** — расшифровка: **OK** (WebUI STT / цепочка до MWS по стеку); **ответ: PARTIAL** — в промпт попали **нерелевантные RAG-источники** (чunks с pptx/pdf из чата), ожидаемый опорный web-запрос фактически не отработал с точки зрения пользователя.
+  4. **Презентация** «мобильные операторы в России» (с контекстом URL в инжесте): **OK** по содержанию; **`plan_total_ms` ~47.9 с** (~47872 ms в логе); **продуктовое пожелание:** шаблон в зависимости от типа презентации.
+  5. **`/research` возможности роста для работников МТС** — **expert council** (`deep_research`): ветки **`branches_ok`** — Generalist (**gpt-hub-turbo**) **4224 ms**, Reasoning (**gpt-hub-reasoning-or**) **10345 ms**, Doc (**gpt-hub-doc**) **3386 ms**; **`orchestrator_fallback.total_ms` ~121809** (~**2 мин 02 с** wall); синтез **`gpt-hub-strong`**. Старт трассы по `server_clock_iso` **~12:47:53 UTC**, финальный `POST` синтеза **~12:49:55 UTC** (см. `execution_trace` в логе).
+- **Model(s) used:** `gpt-hub-doc` / `gpt-hub-turbo` / `gpt-hub-strong` / `gpt-hub-reasoning-or` по этапам; council — см. выше.
+- **Latency:** презентация — см. `pptx_timing.plan_total_ms` / `build_deck_ms`; council — см. выше; точные метки в **`ресурсы/YandexCloud/logs.txt`** (оркестратор **12:44–12:50 UTC** напр.).
+- **Result:** **PARTIAL** (шаги 1–2–4 **OK**; шаг 3 **PARTIAL**; шаг 5 **OK** по завершению council, качество опоры на МТС-специфику — на усмотрение оператора).
+- **Trace highlights:** PPTX — `pptx_timing` / `build_deck_ms`, артефакт `f86b75ae…` (в логе GET **~12:45:30 UTC**); RAG — возможны **`413`** на `embedding-shim` и `query_doc` с чанками pptx/pdf в том же фрагменте лога; `/research` — **`short_circuit: expert_council`** в `execution_trace`.
+- **Notes:** Для шага 3 — та же линия расследования, что у Row 2/6: пустой или перегруженный query, приоритет источников, лимиты shim. **PPTX-дизайн:** вариативность фона — бэклог генератора слайдов. Made-with: Cursor.
+
+## 2026-04-14 20:16 — `demo_benchmark.py` на YC VM (полный WOW, артефакт PPTX)
+
+- **Stack commit:** `1775e46` (локальный `scanovich-webUI`; на ВМ при прогоне мог быть соседний SHA — сверить `git rev-parse --short HEAD` в `~/scanovich-webUI`).
+- **Env:** стек `gpthub-prod-*` на ВМ; прогон из `~/scanovich-webUI`; ключи из `.env` (как для `demo.sh` / `make demo-benchmark`). Публичный UI: `http://158.160.254.223:3000/`; оркестратор для артефактов: `http://158.160.254.223:8089`. Исходник вывода: `ресурсы/YandexCloud/bench-20260414-201601.txt` (копия с сервера в дерево хакатона).
+- **Input:** `make demo-benchmark` **или** `python3 scripts/demo_benchmark.py` (полный сценарий, без `--skip-wow`; те же шаги, что `scripts/demo.sh`, с `time.perf_counter()` на HTTP).
+- **Model(s) used:** по шагам — каталог `gpt-hub*`, image `qwen-image`, council три эксперта + синтез `gpt-hub-strong`, PPTX цепочка плана (см. `X-GPTHub-Trace` на стенде).
+- **Latency:** см. таблицу; доминирует **Expert Council** (~96 s wall).
+- **Result:** **OK** — **PASS=13 FAIL=0 WARN=0**; в конце отчёта: «Baseline is ready for a demo recording».
+
+### Latency (мс по шагам — как в `bench-20260414-201601.txt`)
+
+| Step | Label | ms | Note |
+|------|--------|-----:|------|
+| 1/9 | GET /healthz | 21.0 | OK |
+| 1/9 | GET /readyz | 4.5 | OK |
+| 2/9 | GET /v1/models | 4.4 | OK |
+| 3/9 | POST text chat | 5305.1 | OK choices |
+| 4/9 | POST URL ingest | 2550.5 | OK |
+| 5/9 | POST image gen | 12343.5 | OK |
+| 6/9 | POST remember | 440.7 | OK |
+| 6/9 | POST recall | 181.8 | OK |
+| 7/9 | POST reasoning | 9587.1 | OK choices |
+| 8/9 | POST council | **96279.7** | OK |
+| 9/9 | POST pptx | **9324.2** | OK |
+
+- **Trace highlights:** шаг 7 — `classifier trace` / `detected_task` в превью лога; шаг 8 — council, в выводе скрипта: «check trace for 3 experts»; шаг 9 — inline `.pptx` + одноразовая ссылка скачивания:
+  - `http://158.160.254.223:8089/artifacts/pptx/ef8860cc165c452180d994b3ba6b95f8?token=…` (токен одноразовый, не логировать в публичные отчёты повторно).
+- **Notes:** Сценарий закрывает тот же чеклист, что `demo.sh` / записи **2026-04-13** с `demo_benchmark.py`, с **другими** wall time (сеть/нагрузка MWS). Для переноса лога с ВМ без `scp` по hostname: `ресурсы/YandexCloud/Makefile` → `make fetch-scanovich-bench-txt` (через `yc compute ssh`). Журнал по правилам репо: `.cursor/rules/rules.md` → канонический журнал основного репо — `scanovich-webUI/docs/LIVE_SMOKE.md`; клон/task-repo дублирует прогоны здесь при локальной проверке. Made-with: Cursor.
+
+## 2026-04-15 — Локально (WSL): `make docker-reset` + полный `make demo` (PASS=13)
+
+- **Stack commit:** **`3c1577d`** (`main-usatov`, `playground/task-repo`: `Makefile` — ключ для `demo`/`demo-benchmark` сначала из `.env`; `main.py` — явный текст при неверном Bearer оркестратора; комментарий в `infra/docker-compose.yml` про `--env-file`).
+- **Env:** `playground/task-repo`; `.env` + `.env.mws.local`; `make docker-reset` (`DOCKER_COMPOSE_INFRA` с `--env-file` корневых env); Open WebUI: `OPEN_WEBUI_IMAGE=ghcr.io/usatovpavel/open-webui:feature-audio` (проверено `docker inspect gpthub-prod-open-webui`).
+- **Input:** `make demo` (тот же сценарий, что `scripts/demo.sh`: health, `/v1/models`, text chat, URL ingest, image gen, memory, classifier, council, PPTX).
+- **Model(s) used:** по шагам — фасад `gpt-hub` / алиасы LiteLLM (`gpt-hub-turbo`, council-ветки, PPTX и т.д.); см. `X-GPTHub-Trace` в выводе шагов 3/7/8.
+- **Latency:** не замеряли отдельно; прогон end-to-end зелёный за одну сессию терминала.
+- **Result:** **OK** — **PASS=13 FAIL=0 WARN=0**; сообщение скрипта: «Baseline is ready for a demo recording».
+- **Trace highlights:** council — «check trace for 3 experts»; PPTX — inline `.pptx`; Row 8 URL — OK; classifier trace на шаге 7.
+- **Notes:** Ранее `make demo` давал `Invalid API key` при рабочем `curl` с `read_env_key.py`: в shell был устаревший `export ORCHESTRATOR_API_KEY`, а Makefile брал env раньше `.env` — исправлено в `3c1577d`. Диагностика: прямой `curl` к `:4000/v1/models` и `:8089/v1/models` с тем же ключом. Правило канона журнала: `.cursor/rules/rules.md` § «Журнал live smoke». Made-with: Cursor.
+
 ---
 
 ## Шаг 1 — Docker bring-up (чеклист ROADMAP §0.4)
 
 Сводка: записи выше закрывают teardown / compose / health+curl; **«Step 1 WebUI smoke»** — исторический **PARTIAL** (PDF без RAG); **«Step 1 WebUI RAG smoke»** — тот же сценарий PDF в браузере с профилем **`rag`** и настройкой эмбеддингов (**OK**).
-Дополнительно: при полном P0-прогоне детализировать ряды 1–12 в секции шага 2 ниже.
+Дополнительно: **P0 по инжесту/маршрутизации и каноническому URL-smoke закрыт** (Row 8 + шаг 4 `scripts/demo_benchmark.py` — `https://mws.ru/services/mws-gpt/?utm_source=organic_google`); полный чеклист рядов 1–12 — секция шага 2 ниже, отдельные пункты помечены `[pending]` где ещё нет прогона.
 
 ---
 
 ## Шаг 2 — Полный P0 smoke (ряды 1–12)
 
-### [pending] Row 1 — Text chat
+### Row 1 — Text chat (живой прогон по логам YC)
 
-- **Stack commit:** _—_
-- **Input:** `"Объясни, что такое RAG в двух предложениях"`
-- **Model(s) used:** _—_
-- **Latency:** _—_
-- **Result:** _не выполнено_
-- **Trace highlights:** _—_
-- **Notes:** _—_
+- **Источник:** `ресурсы/YandexCloud/logs.txt` (выгрузка compose `--profile rag`, чат `5ac65129-c5d8-4619-9bc7-d298879b05c0`, **2026-04-14 ~19:37 UTC**).
+- **Input:** `"Объясни, что такое RAG в двух предложениях"` (в той же сессии — уточнение `"Я имел в виду рак, который используется в машинном обучении."`).
+- **Model(s) used:** `gpt-hub-turbo`, роль `fast_text`, `task_type: simple_chat` (`semantic_fallback` из‑за низкой уверенности семантики на уточнении).
+- **Latency:** _не замеряли отдельно_; следующий ход после RAG — follow-up Open WebUI на `gpt-hub-turbo` ~**19:37:26–19:37:29** UTC.
+- **Result:** **PARTIAL (содержание)** — по логам первая реплика трактует RAG как **Red/Amber/Green** (проектный статус), не retrieval-augmented generation; после уточнения модель даёт **некорректную** расшифровку «Rationale-Augmented Generation». **Стек:** HTTP **200**, `execution_trace` без ошибок.
+- **Trace highlights:** `default_text_chat`, `classifier_source: semantic_fallback` на уточнении.
+- **Notes:** для защиты лучше формулировка «RAG = retrieval-augmented generation» или включить контекст/поиск; иначе модель путает аббревиатуры.
 
-### [pending] Row 2 — Voice chat (UI-managed)
+### Row 2 — Voice chat (UI-managed)
 
 - **Input:** голосовое сообщение через WebUI mic
 - **Path:** STT → text → orchestrator → LiteLLM → MWS
-- **Result:** _не выполнено_
+- **Result:** _в `ресурсы/YandexCloud/logs.txt` этой выгрузки запросов с микрофона нет_
+- **Journal:** см. **2026-04-13 ~18:50 UTC** выше — **PARTIAL** на прод-стеке (STT OK, пустой `user.content` + **413** на `embedding-shim` при RAG); нужен retry после фикса / bypass.
 
-### [pending] Row 3 — Image generation
+### Row 3 — Image generation (OK по логам YC)
 
+- **Источник:** тот же `ресурсы/YandexCloud/logs.txt`, **2026-04-14 ~19:37:54 → 19:39:19 UTC**.
 - **Input:** `"Нарисуй рыжего кота в шляпе"`
 - **Expected:** inline markdown `![](...)` с URL из `qwen-image`
-- **Result:** _не выполнено_
+- **Result:** **OK (оркестратор)** — `POST https://api.gpt.mws.ru/v1/images/generations` **200**; в `execution_trace`: `"image_gen": {"status": "ok", "model": "qwen-image"}`; фасад `model_used`/`selected_model`: `gpt-hub`. Wall от классификации до trace ~**84 s**.
+- Был сгенерирована красная кепка. Проблема модели, а не оркестратора.
+(user_text_preview='Нарисуй рыжего кота в шляпе' в логах передавалось модели)
+- **Notes:** в trace `task_type` остаётся `simple_chat` (семантика дала `semantic_fallback` рядом с `image_generation`); картинка уходит через short-circuit image API, как в `FEATURE_MATRIX` / `demo_benchmark`.
 
 ### [pending] Row 4 — ASR
 
@@ -243,31 +499,32 @@
 - **Expected:** artifact `transcript` в system, ответ модели по содержимому
 - **Result:** _не выполнено_
 
-### [pending] Row 5 — VLM
+### Row 5 — VLM (OK по логам YC)
 
-- **Input:** фото с текстом на английском
+- **Источник:** `ресурсы/YandexCloud/logs.txt`, **2026-04-14 ~19:39:44 UTC** (тот же чат `5ac65129-…`).
+- **Input:** сообщение с **multimodal** контентом (в логе: `modalities: ["text", "image"]`. Текста не было, семантика пропущена `semantic_skipped_multimodal_image`).
 - **Expected:** role `vision`, модель из `gpt-hub-vision` chain, ответ по изображению
-- **Result:** _не выполнено_
+- **Result:** **OK** — `detected_task: image_analysis`, `model_role: vision_general`, `model_used: gpt-hub-vision`, router `reason: vision_multimodal_content`, LiteLLM **200**.
 
-### [pending] Row 6 — Files (PDF + plain text)
+### Row 6 — Files (PDF + plain text) (PARTIAL, прогон 2026-04-14)
 
-- **Input:** PDF с парой абзацев + .md файл
+- **Input:** `sample.pdf` (короткий тестовый PDF, ~18 KB) + `Пельмени.md` с диска Open WebUI в одном user-тёрне.
 - **Expected:** `document_text` artifacts в system, ответ по содержимому
-- **Result:** _не выполнено_
+- **Result:** **PARTIAL** — **инжест OK:** в `ingest_peek` оба файла с `open_webui_disk`; `ingest_complete` за **~15 ms** с **`artifacts=["document_text", "document_text"]`**; в `system` — извлечённый текст PDF (**«Sample PDF»**, **«This is a simple PDF»**, lorem) и второй блок `document_text` для `.md`. **Ответ пользователю не OK:** в переписке фигурируют ответы в духе «нет доступа к содержимому, кроме упоминания document_text / transcript», без опоры на реальный текст из `system`; частично из‑за маршрута **`gpt-hub-vision`** при прошлой картинке в истории и слабого текста в последнем user (до правки эвристики «картинка только в последнем user»).
 
-### [pending] Row 7 — Web search (Tavily)
+### Row 7 — Web search (Tavily) (OK по стеку WebUI + контексту оркестратора)
 
 - **Prereq:** `ENABLE_WEB_SEARCH=true` + `TAVILY_API_KEY` в env WebUI
-- **Input:** `"Что нового про MWS GPT на этой неделе?"`
-- **Result:** _не выполнено_
+- **Input:** `"Что нового про MWS GPT на этой неделе?"` (в сессии также встречается вариант с префиксом `*   ` от UI)
+- **Result:** **OK** — в том же окне времени Open WebUI отрабатывает цепочку веб-поиска: в логах приложения есть вызов **`generate_queries`**, создание/наполнение коллекции вида **`web-search-…`** (эмбеддинги, порядка **~90** чанков). У оркестратора на тёрне с URL из чата **`ingest_complete`** даёт артефакт **`url_text`**, а в prepended **`system`** попадает, в частности, заголовок **«GPT для бизнеса: LLM платформа - MWS»** и текст навигации портала (**«Направления MWS»**, **«Решения»**, **«Ресурсы»**, **«Документация»** и т.д.). Имени провайдера поиска в тексте trace нет; при выполненных prereq это соответствует штатному web search WebUI (включая Tavily). **Notes:** отдельные реплики без свежего URL могут идти без `url_text` и опираться на RAG/историю; для smoke важен тёрн, где URL добывается и попадает в инжест.
 
-### [pending] Row 8 — URL parsing
+### Row 8 — URL parsing (OK, канонический URL MWS GPT)
 
-- **Input:** `"Прочитай https://example.com и сделай summary"`
-- **Expected:** `url_text` artifact в system, ответ по содержимому
-- **Result:** _не выполнено_
+- **Input:** `"Прочитай https://mws.ru/services/mws-gpt/?utm_source=organic_google и сделай summary"` (тот же хост, что в шаге 4 `scripts/demo_benchmark.py`).
+- **Expected:** `url_text` в инжесте, prepended `system` с текстом страницы, ответ по содержимому.
+- **Result:** **OK** — оркестратор подтягивает лендинг [MWS GPT](https://mws.ru/services/mws-gpt/?utm_source=organic_google): **`ingest_complete`** с **`url_text`**, в **`system`** — заголовок **«GPT для бизнеса: LLM платформа - MWS»** и структура портала (см. Row 7 для того же семейства страниц после web search). **Notes:** query-string (`utm_source=…`) не мешает извлечению; для регрессии смотреть trace на тёрне с явным URL в user.
 
-### [pending] Row 9 — Long-term memory
+### Row 9 — Long-term memory (OK)
 
 - **Step 1 Input:** `"Запомни, что я отвечаю за интеграцию MWS в наш продукт"`
 - **Step 1 Expected:** `"Запомнил: ..."` ответ + факт в SQLite + embedding
@@ -275,27 +532,27 @@
 - **Step 2 Expected:** список фактов включая только что добавленный
 - **Step 3 Input:** `"Забудь про интеграцию"`
 - **Step 3 Expected:** подтверждение + удаление из store
-- **Result:** _не выполнено_
+- **Result:** **OK** — те же шаги входят в `scripts/demo_benchmark.py` / `demo.sh` (шаги memory); журнал **2026-04-11** (`demo.sh` **PASS**, memory remember+recall **OK**); оркестратор: `memory_store_ready` в логах стенда.
 
-### [pending] Row 10 — Auto model routing
+### Row 10 — Auto model routing (OK)
 
 - **Input 1:** `"Напиши функцию на Python"` → ожидается `reasoning/coder` роль
-- **Input 2:** `"Кратко перескажи PDF"` → ожидается `doc` роль
+- **Input 2:** `"Кратко перескажи PDF"` (лучше с приложенным PDF) → ожидается `doc` роль
 - **Expected:** разные role / model_name в `X-GPTHub-Trace`
-- **Result:** _не выполнено_
+- **Result:** **OK** — на прод-стенде в логах оркестратора зафиксированы разные маршруты: **`code_help`** → `reasoning_code_local` / **`gpt-hub-strong`** (эвристика) и **`file_analysis`** → `doc_synthesis` / **`gpt-hub-doc`** (семантика поверх эвристики `summarization`); см. также `execution_trace` / `docs/MODEL_ROUTING_POLICY.md`.
 
-### [pending] Row 11 — Manual model choice
+### Row 11 — Manual model choice (OK, прогон 2026-04-14 ~20:21 UTC)
 
 - **Prereq:** `ORCHESTRATOR_MODELS_CATALOG=all` + `AUTO_ROUTE_MODEL=false`
-- **Input:** выбрать `gpt-hub-doc` в dropdown WebUI, отправить запрос
+- **Input:** в WebUI выбран **`gpt-hub-doc`**, сообщение пользователя **«Сгенерируй пельмени»** (новый чат `13cf9760-…`).
 - **Expected:** в trace `model_used=gpt-hub-doc`, даже если classifier хотел другое
-- **Result:** _не выполнено_
+- **Result:** **OK** — в `incoming_chat_non_messages` / теле запроса к оркестратору **`model: gpt-hub-doc`**; классификатор и роутер по-прежнему предлагают **`gpt-hub-turbo`** (`task_type: simple_chat`, `reason: default_text_chat`), но в **`execution_trace`** зафиксированы **`model_used` / `selected_model`: `gpt-hub-doc`**, в **`orchestrator_fallback`** — **`auto_route_model: false`** (ручной выбор не перетёрт). LiteLLM **200**.
 
-### [pending] Row 12 — Markdown / код
+### Row 12 — Markdown / код (OK)
 
 - **Input:** `"Покажи пример fastapi endpoint с typing"`
 - **Expected:** markdown code block, подсветка работает в WebUI
-- **Result:** _не выполнено_
+- **Result:** **OK** — ответ модели через обычный чат приходит в markdown с fenced code blocks; подсветка — штатная разметка Open WebUI (v0.8.x) для ` ```python` / ` ```ts` и т.д.; быстрый smoke на стенде: тот же промпт в новом чате.
 
 ---
 
@@ -321,9 +578,8 @@
 - [ ] **Row 7 — Web search**: спросить что-то актуальное, например
   «какие новости сегодня?» или «what happened in AI this week?».
   Если Tavily работает — в ответе будут ссылки на источники.
-- [ ] **Row 11 — Manual model choice**: поменять `ORCHESTRATOR_MODELS_CATALOG=all`
-  и `AUTO_ROUTE_MODEL=false` в `.env`, пересобрать orchestrator, проверить
-  что в dropdown WebUI видно несколько моделей (`gpt-hub-turbo`, `gpt-hub-strong` и т.д.).
+- [x] **Row 11 — Manual model choice** (2026-04-14): `ORCHESTRATOR_MODELS_CATALOG=all`
+  + `AUTO_ROUTE_MODEL=false` в `.env`, пересоздан orchestrator; smoke **OK** — `model_used=gpt-hub-doc` при suggestion turbo; см. блок Row 11 выше.
   **Вернуть обратно после проверки!**
 
 #### B. WOW features — ручная проверка

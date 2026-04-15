@@ -24,10 +24,11 @@ async def test_pptx_short_circuit_non_stream_ok():
     reset_pptx_artifact_store_for_tests()
     plan_json = json.dumps(
         {
+            "presentation_title": "Презентация про демо",
             "slides": [
                 {"title": "Введение", "bullets": ["пункт а"], "notes": ""},
                 {"title": "Итог", "bullets": [], "notes": "спасибо"},
-            ]
+            ],
         }
     )
 
@@ -80,8 +81,70 @@ async def test_pptx_short_circuit_non_stream_ok():
             trace_hdr = r.headers.get("X-GPTHub-Trace")
             assert trace_hdr
             trace = json.loads(base64.b64decode(trace_hdr).decode("utf-8"))
-            assert trace.get("pptx") == {"status": "ok", "slides": 2}
+            assert trace.get("pptx") == {
+                "status": "ok",
+                "slides": 2,
+                "plan_audience": "auto",
+                "template_file": "dark.pptx",
+            }
             assert "orchestrator_fallback" not in trace
+    finally:
+        await mock_inner.aclose()
+
+
+@pytest.mark.asyncio
+async def test_pptx_short_circuit_infers_investor_from_user_prompt():
+    reset_pptx_artifact_store_for_tests()
+    plan_json = json.dumps(
+        {
+            "presentation_title": "MTS AI",
+            "slides": [
+                {"title": "Тезис", "bullets": ["а"], "notes": ""},
+                {"title": "Итог", "bullets": [], "notes": ""},
+            ],
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        msgs = body.get("messages") or []
+        joined = json.dumps(msgs, ensure_ascii=False)
+        assert "investor" in joined
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": plan_json}}]},
+        )
+
+    mock_inner = httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=120.0)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            app.state.settings = Settings(
+                litellm_base_url="http://litellm.test:4000",
+                orchestrator_api_key="test-key",
+                pptx_gen_enabled=True,
+                pptx_asset_templates_enabled=False,
+                pptx_plan_audience="education",
+                image_gen_enabled=False,
+                greeting_canned_response_enabled=False,
+            )
+            app.state.http = mock_inner
+            r = await ac.post(
+                "/v1/chat/completions",
+                headers={"Authorization": "Bearer test-key"},
+                json={
+                    "model": "gpt-hub",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Сделай для инвесторов презентацию возможностей компании",
+                        },
+                    ],
+                },
+            )
+            assert r.status_code == 200
+            trace = json.loads(base64.b64decode(r.headers["X-GPTHub-Trace"]).decode("utf-8"))
+            assert trace["pptx"]["plan_audience"] == "investor"
+            assert trace["pptx"]["template_file"] == "investor.pptx"
     finally:
         await mock_inner.aclose()
 

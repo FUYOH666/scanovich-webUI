@@ -3,42 +3,42 @@ from gpthub_orchestrator.classifier import classify_messages
 
 def test_pptx_strong_ru():
     m = [{"role": "user", "content": "Сделай презентацию про квартальные метрики"}]
-    assert classify_messages(m)["task_type"] == "pptx"
+    assert classify_messages(m)["task_type"] == "pptx_generation"
 
 
 def test_pptx_strong_sgeneriruy_po_teme_priroda():
     m = [{"role": "user", "content": "Сгенерируй презентацию по теме природа"}]
-    assert classify_messages(m)["task_type"] == "pptx"
+    assert classify_messages(m)["task_type"] == "pptx_generation"
 
 
 def test_pptx_strong_prezentacia_po_teme():
     m = [{"role": "user", "content": "Презентация по теме устойчивое развитие, 5 слайдов"}]
-    assert classify_messages(m)["task_type"] == "pptx"
+    assert classify_messages(m)["task_type"] == "pptx_generation"
 
 
 def test_pptx_strong_generate_presentation_en():
     m = [{"role": "user", "content": "Generate a presentation about oceans"}]
-    assert classify_messages(m)["task_type"] == "pptx"
+    assert classify_messages(m)["task_type"] == "pptx_generation"
 
 
 def test_pptx_strong_slash_command():
     m = [{"role": "user", "content": "hey, /pptx on our roadmap"}]
-    assert classify_messages(m)["task_type"] == "pptx"
+    assert classify_messages(m)["task_type"] == "pptx_generation"
 
 
 def test_pptx_strong_build_deck():
     m = [{"role": "user", "content": "Please build deck for the board meeting"}]
-    assert classify_messages(m)["task_type"] == "pptx"
+    assert classify_messages(m)["task_type"] == "pptx_generation"
 
 
 def test_pptx_strong_presentation_po_etomu():
     m = [{"role": "user", "content": "Презентация по этому тексту ниже:\n\nfoo bar"}]
-    assert classify_messages(m)["task_type"] == "pptx"
+    assert classify_messages(m)["task_type"] == "pptx_generation"
 
 
 def test_pptx_weak_slides_ru():
     m = [{"role": "user", "content": "Подготовь слайды про инфраструктуру,5–7 штук"}]
-    assert classify_messages(m)["task_type"] == "pptx"
+    assert classify_messages(m)["task_type"] == "pptx_generation"
 
 
 def test_pptx_weak_deck_with_slides_long():
@@ -68,7 +68,7 @@ def test_pptx_strong_overrides_summarize_intent():
             "content": "Summarize this report and make a presentation for executives",
         }
     ]
-    assert classify_messages(m)["task_type"] == "pptx"
+    assert classify_messages(m)["task_type"] == "pptx_generation"
 
 
 def test_pptx_code_hints_without_pptx_stays_code():

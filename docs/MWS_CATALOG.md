@@ -27,18 +27,18 @@
 | `bge-m3` | embeddings / reranker alt |
 | `BAAI/bge-multilingual-gemma2` | embeddings alt |
 | `QwQ-32B` | reasoning alt |
-| `Qwen3-235B-A22B-Instruct-2507-FP8` | strong alt |
+| `Qwen3-235B-A22B-Instruct-2507-FP8` | strong alt; alias **`gpt-hub-pptx-qwen235a22`** (PPTX plan bench) |
 | `T-pro-it-1.0` | RU-focused alt |
 | `deepseek-r1-distill-qwen-32b` | reasoning alt |
 | `gpt-oss-120b` | strong alt |
 | `gpt-oss-20b` | fast alt |
 | `kimi-k2-instruct` | strong alt |
-| `llama-3.3-70b-instruct` | strong alt |
+| `llama-3.3-70b-instruct` | strong alt; alias **`gpt-hub-pptx-llama33`** (PPTX plan bench, `infra/litellm/config.yaml`) |
 | `qwen3-32b` | mid-tier alt |
 
 ## Выводы, которые меняют roadmap
 
-- Все текущие alias в `infra/litellm/config.yaml` имеют валидный upstream id — config трогать не нужно, только дополнить новыми alias для image gen и embeddings.
+- Baseline alias в `infra/litellm/config.yaml` должны указывать на существующие upstream id; при новых моделях в MWS — дополнять `model_list` (в т.ч. опциональные PPTX-bench alias `gpt-hub-pptx-*`).
 - Row 3 (image generation) закрывается через `qwen-image` — отдельный локальный stable-diffusion не нужен.
 - Row 4 (ASR) закрывается через `whisper-medium` / `whisper-turbo-local` напрямую из MWS — не нужен `host.docker.internal:8001`.
 - Row 9 (memory) получает готовые эмбеддинги `qwen3-embedding-8b` — не нужно внешнее embedding-hosting.

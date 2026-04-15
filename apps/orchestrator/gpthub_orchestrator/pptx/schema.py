@@ -86,7 +86,21 @@ class SlideSpec(BaseModel):
 
 
 class SlidePlan(BaseModel):
+    """Deck plan. ``presentation_title`` is only for the optional intro slide; content slides use ``slides``."""
+
+    presentation_title: str | None = Field(
+        default=None,
+        description="Overall deck title for the title slide; slide1+ use section titles in slides[].",
+    )
     slides: list[SlideSpec] = Field(default_factory=list)
+
+    @field_validator("presentation_title", mode="before")
+    @classmethod
+    def _coerce_presentation_title(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s if s else None
 
     @field_validator("slides", mode="before")
     @classmethod
