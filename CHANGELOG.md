@@ -8,6 +8,9 @@
   [`docs/assets/scanovich-social-cover.png`](docs/assets/scanovich-social-cover.png)
   (1080×1920) and SCANOVICH pitch at the top of [`README.md`](README.md);
   authors synced in [`AUTHORS.md`](AUTHORS.md) (Mordvinov / Usatov / Mazurenko).
+- **Commercial roadmap:** [`docs/COMMERCIAL_ROADMAP_RU.md`](docs/COMMERCIAL_ROADMAP_RU.md)
+  — keep/burn audit, target architecture (Knowledge + Model planes), SKUs,
+  phases 0–3, first 10 epics; linked from README for customer entry.
 - **Локальный запуск Docker:** [`docs/LOCAL_RUN_RU.md`](docs/LOCAL_RUN_RU.md) — RU-туториал
   (два `--env-file`, профиль `rag`, health, `make demo`, типовые сбои) и **такс-лист**
   перед приёмкой. В [`Makefile`](Makefile): цели **`docker-up`**, **`docker-down`**,

@@ -12,6 +12,9 @@
 
 **Обложка для соцсетей** (Instagram / RedNote, 1080×1920): [`docs/assets/scanovich-social-cover.png`](docs/assets/scanovich-social-cover.png).
 
+**Коммерческая дорожная карта** (что оставить, что снести, пилот / enterprise / platform):  
+[`docs/COMMERCIAL_ROADMAP_RU.md`](docs/COMMERCIAL_ROADMAP_RU.md) — точка входа для заказчиков и для доработки продукта «спустя квартал».
+
 ---
 
 ## Откуда вырос проект
@@ -199,6 +202,7 @@ Optional `rag` support is infrastructure for Open WebUI, not a second flagship p
 
 ## Документация и материалы
 
+- **`docs/COMMERCIAL_ROADMAP_RU.md`** — коммерческая стратегия и целевая архитектура (для бизнеса / next)
 - `docs/NEW_CHAT_HANDOFF_RU.md` — handoff для нового чата
 - `docs/TEAM_BRIEF_RU.md` — командный бриф
 - `ARCHITECTURE.md` — архитектура
