@@ -22,4 +22,4 @@
 - **`docs/submission/assets/README.md`** — опциональные скриншоты (чат, `X-GPTHub-Trace`) для усиления слайдов 8–9; не коммитьте секреты.
 
 Краткий текст для поля «архитектура + сценарии + модели + внешние зависимости»
-(можно копировать в форму): см. конец [`docs/STUDY_PATH_RU.md`](../STUDY_PATH_RU.md) (раздел **«Текст для сабмисона»**).
+(можно копировать в форму): см. [`ARCHITECTURE_SUBMISSION_RU.txt`](ARCHITECTURE_SUBMISSION_RU.txt) и [`FEATURE_MATRIX.md`](../../FEATURE_MATRIX.md).

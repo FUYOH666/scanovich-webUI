@@ -62,7 +62,7 @@ docker compose \
 make demo
 ```
 
-Ожидайте в выводе `PASS=12 FAIL=0` (допустим `WARN` — см. [`docs/LIVE_SMOKE.md`](LIVE_SMOKE.md)).
+Ожидайте в выводе `PASS=12 FAIL=0` (допустим `WARN` на опциональных шагах).
 
 ### 5. Остановить стек
 
@@ -78,7 +78,7 @@ make docker-down
 
 ### Порты 3000 / 4000 / 8089 заняты
 
-Остановите старые стеки (**`gpthub-v3-*`** и любые другие compose на этих портах). См. [`docs/NEW_CHAT_HANDOFF_RU.md`](NEW_CHAT_HANDOFF_RU.md).
+Остановите старые стеки (**`gpthub-v3-*`** и любые другие compose на этих портах).
 
 ### `make demo` падает с пустым ключом
 
@@ -86,11 +86,7 @@ make docker-down
 
 ### WebUI не тот образ
 
-Проверьте **`OPEN_WEBUI_IMAGE`** в `.env`. По умолчанию в bootstrap — образ форка (`ghcr.io/usatovpavel/open-webui:feature-audio`, см. `Makefile`). После смены тега снова **`make docker-pull`**.
-
-### Работа с GitLab (`truetech`)
-
-Если команда пушит только в GitLab: `git fetch truetech` и осознанно смержить нужную ветку в вашу `main`; автоматического двустороннего синка нет.
+Проверьте **`OPEN_WEBUI_IMAGE`** в `.env` (см. `Makefile` / `bootstrap.env.example`). После смены тега снова **`make docker-pull`**.
 
 ---
 
@@ -109,9 +105,9 @@ make docker-down
 9. [ ] `make docker-up` (или эквивалентная `docker compose` строка с **двумя** `--env-file` и **`--profile rag`**).
 10. [ ] Дождаться healthy: WebUI открывается на :3000.
 11. [ ] `curl -sS http://localhost:8089/readyz` — успех.
-12. [ ] `make demo` — `PASS=12 FAIL=0`, зафиксировать `WARN` в [`LIVE_SMOKE.md`](LIVE_SMOKE.md) при необходимости.
-13. [ ] Ручные сценарии по матрице (голос, `.wav`, фото VLM, Tavily, ручная модель, PPTX) — по чеклисту организаторов / [`docs/STUDY_PATH_RU.md`](STUDY_PATH_RU.md) фаза C.
-14. [ ] Обновить [`docs/LIVE_SMOKE.md`](LIVE_SMOKE.md) и xlsx: `uv run --with openpyxl python scripts/build_features_xlsx.py`.
+12. [ ] `make demo` — `PASS=12 FAIL=0` (WARN на опциональных шагах допустим).
+13. [ ] Ручные сценарии по матрице (голос, `.wav`, фото VLM, Tavily, ручная модель, PPTX) — по необходимости.
+14. [ ] Обновить xlsx при смене матрицы: `uv run --with openpyxl python scripts/build_features_xlsx.py`.
 15. [ ] `make docker-down` после работы (или оставить стек — по политике машины).
 
 ---
@@ -119,5 +115,5 @@ make docker-down
 ## См. также
 
 - [`README.md`](../README.md) — Quick Start, таблица сервисов.
-- [`docs/NEW_CHAT_HANDOFF_RU.md`](NEW_CHAT_HANDOFF_RU.md) — handoff, конфликт портов.
+- [`docs/REPO_HYGIENE.md`](REPO_HYGIENE.md) — что нельзя коммитить в public.
 - [`docs/submission/README.md`](submission/README.md) — артефакты сдачи (PDF архитектуры, xlsx, слайды).

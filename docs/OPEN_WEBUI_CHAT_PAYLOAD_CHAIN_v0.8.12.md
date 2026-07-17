@@ -80,4 +80,4 @@
 - chat `generate_chat_completion`:  
   https://github.com/open-webui/open-webui/blob/v0.8.12/backend/open_webui/utils/chat.py#L141  
 
-Дополнение по смежной отладке: **`docs/WEBUI_PAYLOAD.md`** (формат оркестратора) и журнал **`docs/LIVE_SMOKE.md`** (голос + пустой content + 413).
+Дополнение по смежной отладке: **`docs/WEBUI_PAYLOAD.md`** (формат оркестратора).

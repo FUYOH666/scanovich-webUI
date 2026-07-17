@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Public repo readiness:** removed team-only docs from the published tree
+  (`ROADMAP.md`, `LIVE_SMOKE`, handoff/brief/study path, full commercial roadmap,
+  OSS leverage playbook). They live in gitignored **`.local/`** on developer
+  machines. Public surface: slim `README.md`, `docs/FOR_BUSINESS_RU.md`,
+  `docs/REPO_HYGIENE.md`. Example env hosts/keys sanitized to placeholders.
+
 ### Added
 
 - **Public product facade:** vertical social cover

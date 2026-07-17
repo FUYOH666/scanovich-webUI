@@ -13,7 +13,7 @@ vendored upstream configs, which remain under their own licenses).
 - **Usatov Pavel** — developer.
   PPTX (план, шаблоны, аудитория), мост статусов Open WebUI, семантический
   классификатор и политика ingest (общий том загрузок с WebUI), compose/STT
-  через MWS, Makefile, записи в `docs/LIVE_SMOKE.md`.
+  через MWS, Makefile, live smoke journaling.
   GitHub: [@UsatovPavel](https://github.com/UsatovPavel)
 
 - **Aleksandr Mazurenko** — ручное UI-тестирование.

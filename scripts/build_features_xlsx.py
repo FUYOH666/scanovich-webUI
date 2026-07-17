@@ -26,7 +26,7 @@ OUT = ROOT / "docs" / "submission" / "GPTHub_features_matrix.xlsx"
 STATUS_RU: dict[str, str] = {
     "Implemented": (
         "Реализовано в коде: сценарий закрыт автотестами и/или живым прогоном "
-        "контракта MWS (см. docs/MWS_CATALOG.md, docs/LIVE_SMOKE.md)."
+        "upstream-контракта (см. docs/MWS_CATALOG.md как пример каталога)."
     ),
     "Implemented (UI-managed)": (
         "Реализовано через штатные настройки Open WebUI (без отдельной логики "
@@ -35,15 +35,15 @@ STATUS_RU: dict[str, str] = {
     ),
     "Implemented (WOW-1)": (
         "Реализовано как дополнительная WOW-1 фича: не ломает единый поток чата, "
-        "есть тесты и зафиксированный smoke; приоритет см. ROADMAP.md."
+        "есть тесты и зафиксированный smoke."
     ),
     "Implemented (WOW-3)": (
         "Реализовано как дополнительная WOW-3 фича: не ломает единый поток чата, "
-        "есть тесты и записи в LIVE_SMOKE.md; приоритет см. ROADMAP.md."
+        "есть тесты и зафиксированный smoke."
     ),
     "Wired, pending live smoke": (
         "Код подключён, но нужен полный end-to-end прогон через поднятый "
-        "docker-stack и запись результата в docs/LIVE_SMOKE.md."
+        "docker-stack."
     ),
     "Partial": "Часть пользовательских сценариев покрыта, часть — нет; см. причину в матрице.",
     "Deferred": "Не начато / отложено; в матрице указана причина или план.",

@@ -52,8 +52,9 @@ logs/
 # fork/build work if needed; it stays ignored.
 /open-webui/
 
-# --- Optional local scratch ---
+# --- Team-only workspace (never publish) ---
+# Commercial roadmap, OSS layer assembly, smoke journals, handoffs.
 .local/
+
+# --- Optional local scratch ---
 scratch/
-*.local.md
-!docs/**/*.md

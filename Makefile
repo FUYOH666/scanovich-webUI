@@ -16,7 +16,7 @@ DOCKER_COMPOSE_INFRA := docker compose \
 OPEN_WEBUI_DIR ?= open-webui
 OPEN_WEBUI_COMPOSE ?= $(CURDIR)/$(OPEN_WEBUI_DIR)/docker-compose.yaml
 # Готовый образ форка (без локального build); см. open-webui-image-up
-OPEN_WEBUI_IMAGE ?= ghcr.io/usatovpavel/open-webui:feature-audio
+OPEN_WEBUI_IMAGE ?= ghcr.io/open-webui/open-webui:v0.8.12
 OPEN_WEBUI_CONTAINER ?= open-webui-prebuilt
 OPEN_WEBUI_PORT ?= 3000
 # Для связки с Ollama на хосте; для docker-сети с сервисом ollama — переопределить (например http://ollama:11434 + --network)
