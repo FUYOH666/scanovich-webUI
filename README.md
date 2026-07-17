@@ -1,8 +1,26 @@
-# GPTHub Prod
+<p align="center">
+  <img src="docs/assets/scanovich-social-cover.png" alt="SCANOVICH — Private AI" width="420" />
+</p>
 
-Финальное решение кейса **«GPTHub: единое окно для всех ИИ-задач»** (платформа MWS GPT): один чат в **Open WebUI** для текста, голоса, файлов, картинок и инструментов, с **автоматическим и ручным** выбором модели, **долгосрочной памятью** и наблюдаемостью маршрутизации. Все вызовы LLM/VLM/ASR/embedding и генерации изображений идут в **MWS GPT** через прокси **LiteLLM**; оркестратор реализует классификацию, смешанный ввод, политику ролей и доп. сценарии (исследование, PPTX и т.д.).
+# SCANOVICH
 
-**Запрос по умолчанию:** пользователь → **Open WebUI** → **orchestrator** → **LiteLLM** → **MWS GPT**.
+**Ваши модели. Ваша база знаний. Ваш периметр.**
+
+То, что обычно берут как облачную подписку (OpenAI, Claude и аналоги), здесь собирается **как свой продукт**: тот же привычный чат-интерфейс, но с подключением **своего** inference (локального или корпоративного) и возможностью **индексировать собственную базу знаний**. Данные не обязаны уходить за пределы компании.
+
+Подходит для бизнеса, где важна **приватность**: медицина, юристы, банки, разработка, добыча и недра — и любая отрасль с чувствительными документами. Open-source каркас, который можно адаптировать под задачу и контур.
+
+**Обложка для соцсетей** (Instagram / RedNote, 1080×1920): [`docs/assets/scanovich-social-cover.png`](docs/assets/scanovich-social-cover.png).
+
+---
+
+## Откуда вырос проект
+
+Практический тренажёр и рабочий стенд по кейсу **«GPTHub: единое окно для всех ИИ-задач»** (платформа MWS GPT): один чат в **Open WebUI** для текста, голоса, файлов, картинок и инструментов, с **автоматическим и ручным** выбором модели, **долгосрочной памятью** и наблюдаемостью маршрутизации. Вызовы LLM/VLM/ASR/embedding и генерации изображений — через **LiteLLM** к upstream API; оркестратор — классификация, смешанный ввод, политика ролей, research, PPTX и т.д.
+
+**Запрос по умолчанию:** пользователь → **Open WebUI** → **orchestrator** → **LiteLLM** → **upstream (MWS GPT / свой контур)**.
+
+Трое в команде — большое спасибо всем: это был хороший практический прогон, который **уже работает** и может быть адаптирован под бизнес и задачи.
 
 ---
 
@@ -173,9 +191,11 @@ Optional `rag` support is infrastructure for Open WebUI, not a second flagship p
 
 ## Авторы
 
-**Aleksandr Mordvinov** Owner, organisation. — WOW-1 Expert Council, поставка web-search Tavily, markitdown-ingest Office, лимиты веб-поиска и обход встроенного RAG WebUI для загрузок, синхронизация roadmap / `FEATURE_MATRIX.md` / handoff.
-**Usatov Pavel** — developer. PPTX (план, шаблоны, аудитория), мост статусов Open WebUI, семантический классификатор и политика ingest (общий том загрузок с WebUI), compose/STT через MWS, Makefile, записи в `docs/LIVE_SMOKE.md`; Короче конец.
-**Aleksandr Mazurenko** - ручное UI-тестирование
+- **Aleksandr Mordvinov** — Owner, organisation. WOW-1 Expert Council, поставка web-search Tavily, markitdown-ingest Office, лимиты веб-поиска и обход встроенного RAG WebUI для загрузок, синхронизация roadmap / `FEATURE_MATRIX.md` / handoff. GitHub: [@FUYOH666](https://github.com/FUYOH666)
+- **Usatov Pavel** — developer. PPTX (план, шаблоны, аудитория), мост статусов Open WebUI, семантический классификатор и политика ingest (общий том загрузок с WebUI), compose/STT через MWS, Makefile, записи в `docs/LIVE_SMOKE.md`. GitHub: [@UsatovPavel](https://github.com/UsatovPavel)
+- **Aleksandr Mazurenko** — ручное UI-тестирование
+
+Полный список и правки — [`AUTHORS.md`](AUTHORS.md).
 
 ## Документация и материалы
 

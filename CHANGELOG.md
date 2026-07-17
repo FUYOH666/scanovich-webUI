@@ -4,6 +4,10 @@
 
 ### Added
 
+- **Public product facade:** vertical social cover
+  [`docs/assets/scanovich-social-cover.png`](docs/assets/scanovich-social-cover.png)
+  (1080×1920) and SCANOVICH pitch at the top of [`README.md`](README.md);
+  authors synced in [`AUTHORS.md`](AUTHORS.md) (Mordvinov / Usatov / Mazurenko).
 - **Локальный запуск Docker:** [`docs/LOCAL_RUN_RU.md`](docs/LOCAL_RUN_RU.md) — RU-туториал
   (два `--env-file`, профиль `rag`, health, `make demo`, типовые сбои) и **такс-лист**
   перед приёмкой. В [`Makefile`](Makefile): цели **`docker-up`**, **`docker-down`**,
