@@ -15,6 +15,9 @@
 **Коммерческая дорожная карта** (что оставить, что снести, пилот / enterprise / platform):  
 [`docs/COMMERCIAL_ROADMAP_RU.md`](docs/COMMERCIAL_ROADMAP_RU.md) — точка входа для заказчиков и для доработки продукта «спустя квартал».
 
+**Публичная гигиена + OSS-леверидж (80/20):**  
+[`docs/PUBLIC_HYGIENE_AND_OSS_LEVERAGE_RU.md`](docs/PUBLIC_HYGIENE_AND_OSS_LEVERAGE_RU.md) — что не коммитить; RAGFlow / LibreChat / LiteLLM / Langfuse и как собирать пилот.
+
 ---
 
 ## Откуда вырос проект

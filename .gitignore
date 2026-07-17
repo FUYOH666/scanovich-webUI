@@ -1,21 +1,59 @@
-/.env
-/.env.mws.local
+# --- Secrets & local env (never publish) ---
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.mws.local.example
+bootstrap.env
+*.pem
+*.key
+!**/tests/**/*.key
+credentials.*
+secrets/
+*.secret
+*.token
 
+# --- Local / editor / OS ---
+.DS_Store
+.idea/
+.vscode/
+.cursor/
+*.swp
+*.swo
+
+# --- Python ---
 **/.venv/
 **/__pycache__/
 **/.pytest_cache/
 **/.ruff_cache/
 **/.mypy_cache/
-
 *.pyc
 *.pyo
-*.log
-*.db
-*.sqlite3
 .coverage
-.DS_Store
+htmlcov/
+dist/
+build/
+*.egg-info/
 
+# --- Runtime data & logs ---
 data/
 !apps/orchestrator/gpthub_orchestrator/data/
 tmp/
+logs/
+*.log
+*.db
+*.sqlite3
 *.out.txt
+*.bench.txt
+
+# --- Open WebUI upstream tree ---
+# Product compose uses OPEN_WEBUI_IMAGE (GHCR). Do not vendor the full
+# Open WebUI source into this public product repo. Keep a local clone for
+# fork/build work if needed; it stays ignored.
+/open-webui/
+
+# --- Optional local scratch ---
+.local/
+scratch/
+*.local.md
+!docs/**/*.md

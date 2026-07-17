@@ -24,7 +24,7 @@
 | WOW-1 Council | [`council.py`](../apps/orchestrator/gpthub_orchestrator/council.py) |
 | WOW-3 PPTX | [`gpthub_orchestrator/pptx/`](../apps/orchestrator/gpthub_orchestrator/pptx/) |
 | LiteLLM / MWS | [`infra/litellm/config.yaml`](../infra/litellm/config.yaml), [`docs/MWS_CATALOG.md`](MWS_CATALOG.md) |
-| Open WebUI | [`open-webui/`](../open-webui/) (fork), [`infra/docker-compose.yml`](../infra/docker-compose.yml) |
+| Open WebUI | образ `OPEN_WEBUI_IMAGE` (GHCR), [`infra/docker-compose.yml`](../infra/docker-compose.yml); исходники UI **не** в этом репо — см. [`PUBLIC_HYGIENE_AND_OSS_LEVERAGE_RU.md`](PUBLIC_HYGIENE_AND_OSS_LEVERAGE_RU.md) |
 
 - [ ] Пройти таблицу сверху вниз, открывая только нужные модули (не читать весь orchestrator линейно).
 

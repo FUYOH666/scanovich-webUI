@@ -11,6 +11,10 @@
 - **Commercial roadmap:** [`docs/COMMERCIAL_ROADMAP_RU.md`](docs/COMMERCIAL_ROADMAP_RU.md)
   — keep/burn audit, target architecture (Knowledge + Model planes), SKUs,
   phases 0–3, first 10 epics; linked from README for customer entry.
+- **Public hygiene:** hardened [`.gitignore`](.gitignore); stop tracking vendored
+  `/open-webui/` (use `OPEN_WEBUI_IMAGE` / GHCR). Guide
+  [`docs/PUBLIC_HYGIENE_AND_OSS_LEVERAGE_RU.md`](docs/PUBLIC_HYGIENE_AND_OSS_LEVERAGE_RU.md)
+  — secrets checklist + OSS leverage (RAGFlow, LibreChat, LiteLLM, Langfuse, …).
 - **Локальный запуск Docker:** [`docs/LOCAL_RUN_RU.md`](docs/LOCAL_RUN_RU.md) — RU-туториал
   (два `--env-file`, профиль `rag`, health, `make demo`, типовые сбои) и **такс-лист**
   перед приёмкой. В [`Makefile`](Makefile): цели **`docker-up`**, **`docker-down`**,
